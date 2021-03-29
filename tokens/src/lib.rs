@@ -175,7 +175,7 @@ pub mod module {
 			+ MaybeSerializeDeserialize;
 
 		/// The currency ID type
-		type CurrencyId: Parameter + Member + Copy + MaybeSerializeDeserialize + Ord;
+		type CurrencyId: Parameter + Member + Copy + MaybeSerializeDeserialize + Ord + Default;
 
 		/// Weight information for extrinsics in this module.
 		type WeightInfo: WeightInfo;
@@ -382,10 +382,10 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
 				// If existed before, decrease account provider.
 				// Ignore the result, because if it failed means that these’s remain consumers,
 				// and the account storage in frame_system shouldn't be repeaded.
-				let _ = frame_system::Pallet::<T, I>::dec_providers(who);
+				let _ = frame_system::Pallet::<T>::dec_providers(who);
 			} else if !existed && exists {
 				// if new, increase account provider
-				frame_system::Pallet::<T, I>::inc_providers(who);
+				frame_system::Pallet::<T>::inc_providers(who);
 			}
 
 			if let Some(dust_amount) = handle_dust {
@@ -447,13 +447,13 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
 			<Locks<T, I>>::remove(who, currency_id);
 			if existed {
 				// decrease account ref count when destruct lock
-				frame_system::Pallet::<T, I>::dec_consumers(who);
+				frame_system::Pallet::<T>::dec_consumers(who);
 			}
 		} else {
 			<Locks<T, I>>::insert(who, currency_id, locks);
 			if !existed {
 				// increase account ref count when initialize lock
-				if frame_system::Pallet::<T, I>::inc_consumers(who).is_err() {
+				if frame_system::Pallet::<T>::inc_consumers(who).is_err() {
 					// No providers for the locks. This is impossible under normal circumstances
 					// since the funds that are under the lock will themselves be stored in the
 					// account and therefore will need a reference.
@@ -816,15 +816,15 @@ impl<T: Config<I>, I: 'static> MultiReservableCurrency<T::AccountId> for Pallet<
 
 pub struct CurrencyAdapter<T, GetCurrencyId, I : 'static = ()>(marker::PhantomData<(T, I, GetCurrencyId)>);
 
-impl<T, I, GetCurrencyId> PalletCurrency<T::AccountId> for CurrencyAdapter<T, I, GetCurrencyId>
+impl<T, I, GetCurrencyId: 'static> PalletCurrency<T::AccountId> for CurrencyAdapter<T, I, GetCurrencyId>
 where
 	T: Config<I>,
 	I: 'static,
 	GetCurrencyId: Get<T::CurrencyId>,
 {
 	type Balance = T::Balance;
-	type PositiveImbalance = PositiveImbalance<T, I, GetCurrencyId>;
-	type NegativeImbalance = NegativeImbalance<T, I, GetCurrencyId>;
+	type PositiveImbalance = PositiveImbalance<T, I>;
+	type NegativeImbalance = NegativeImbalance<T, I>;
 
 	fn total_balance(who: &T::AccountId) -> Self::Balance {
 		Pallet::<T, I>::total_balance(GetCurrencyId::get(), who)
@@ -929,7 +929,7 @@ where
 		let currency_id = GetCurrencyId::get();
 		let new_total = Pallet::<T, I>::free_balance(currency_id, who)
 			.checked_add(&value)
-			.ok_or(Error::<T>::TotalIssuanceOverflow)?;
+			.ok_or(Error::<T, I>::TotalIssuanceOverflow)?;
 		Pallet::<T, I>::set_free_balance(currency_id, who, new_total);
 
 		Ok(Self::PositiveImbalance::new(value))
@@ -987,7 +987,7 @@ where
 	}
 }
 
-impl<T, I, GetCurrencyId> PalletReservableCurrency<T::AccountId> for CurrencyAdapter<T, I, GetCurrencyId>
+impl<T, I, GetCurrencyId: 'static> PalletReservableCurrency<T::AccountId> for CurrencyAdapter<T, I, GetCurrencyId>
 where
 	T: Config<I>,
 	I: 'static,
@@ -1024,7 +1024,7 @@ where
 	}
 }
 
-impl<T, I, GetCurrencyId> PalletLockableCurrency<T::AccountId> for CurrencyAdapter<T, I, GetCurrencyId>
+impl<T, I, GetCurrencyId: 'static> PalletLockableCurrency<T::AccountId> for CurrencyAdapter<T, I, GetCurrencyId>
 where
 	T: Config<I>,
 	I: 'static,
