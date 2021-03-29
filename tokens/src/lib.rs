@@ -45,7 +45,7 @@ use frame_support::{
 	traits::{
 		BalanceStatus as Status, Currency as PalletCurrency, ExistenceRequirement, Get, Imbalance,
 		LockableCurrency as PalletLockableCurrency, ReservableCurrency as PalletReservableCurrency, SignedImbalance,
-		WithdrawReasons,
+		WithdrawReasons, TryDrop
 	},
 	transactional,
 };
