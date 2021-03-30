@@ -1,8 +1,8 @@
 // wrapping these imbalances in a private module is necessary to ensure absolute
 // privacy of the inner member.
-use crate::{Config, TotalIssuance, Get, Imbalance, TryDrop};
+use crate::{Config, TotalIssuance, Imbalance, TryDrop};
 use sp_runtime::traits::{Saturating, Zero};
-use sp_std::{marker, mem, result};
+use sp_std::{mem, result};
 
 /// Opaque, move-only struct with private fields that serves as a token
 /// denoting that funds have been created without any equal and opposite
