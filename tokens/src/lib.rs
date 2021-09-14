@@ -486,14 +486,14 @@ pub mod module {
 				account.reserved = new_reserved;
 
 				if new_total > old_total {
-					TotalIssuance::<T>::try_mutate(currency_id, |t| -> DispatchResult {
+					TotalIssuance::<T,I>::try_mutate(currency_id, |t| -> DispatchResult {
 						*t = t
 							.checked_add(&(new_total - old_total))
 							.ok_or(ArithmeticError::Overflow)?;
 						Ok(())
 					})?;
 				} else if new_total < old_total {
-					TotalIssuance::<T>::try_mutate(currency_id, |t| -> DispatchResult {
+					TotalIssuance::<T,I>::try_mutate(currency_id, |t| -> DispatchResult {
 						*t = t
 							.checked_sub(&(old_total - new_total))
 							.ok_or(ArithmeticError::Underflow)?;
@@ -508,7 +508,7 @@ pub mod module {
 	}
 }
 
-impl<T: Config<I>, I: 'static> Pallet<T> {
+impl<T: Config<I>, I: 'static> Pallet<T, I> {
 	pub(crate) fn deposit_consequence(
 		_who: &T::AccountId,
 		currency_id: T::CurrencyId,
@@ -600,10 +600,10 @@ impl<T: Config<I>, I: 'static> Pallet<T> {
 
 		let new_balance = Self::free_balance(currency_id, who)
 			.checked_sub(&amount)
-			.ok_or(Error::<T>::BalanceTooLow)?;
+			.ok_or(Error::<T,I>::BalanceTooLow)?;
 		ensure!(
 			new_balance >= Self::accounts(who, currency_id).frozen(),
-			Error::<T>::LiquidityRestrictions
+			Error::<T,I>::LiquidityRestrictions
 		);
 		Ok(())
 	}
@@ -773,8 +773,8 @@ impl<T: Config<I>, I: 'static> Pallet<T> {
 				// error.
 				// Note: if `to_account` is in `T::DustRemovalWhitelist`, can bypass this check.
 				ensure!(
-					to_account.total() >= ed || Self::is_module_account_id(to),
-					Error::<T,I>::ExistentialDeposit
+					to_account.total() >= ed || T::DustRemovalWhitelist::contains(to),
+					Error::<T, I>::ExistentialDeposit
 				);
 
 				Self::ensure_can_withdraw(currency_id, from, amount)?;
@@ -840,11 +840,11 @@ impl<T: Config<I>, I: 'static> Pallet<T> {
 			let would_kill = would_be_dead && (previous_total >= ed || !previous_total.is_zero());
 			ensure!(
 				existence_requirement == ExistenceRequirement::AllowDeath || !would_kill,
-				Error::<T>::KeepAlive
+				Error::<T,I>::KeepAlive
 			);
 
 			if change_total_issuance {
-				TotalIssuance::<T>::mutate(currency_id, |v| *v -= amount);
+				TotalIssuance::<T,I>::mutate(currency_id, |v| *v -= amount);
 			}
 
 			Ok(())
@@ -875,14 +875,14 @@ impl<T: Config<I>, I: 'static> Pallet<T> {
 
 		Self::try_mutate_account(who, currency_id, |account, existed| -> DispatchResult {
 			if require_existed {
-				ensure!(existed, Error::<T>::DeadAccount);
+				ensure!(existed, Error::<T,I>::DeadAccount);
 			} else {
 				let ed = T::ExistentialDeposits::get(&currency_id);
 				// Note: if who is in dust removal whitelist, allow to deposit the amount that
 				// below ED to it.
 				ensure!(
 					amount >= ed || existed || T::DustRemovalWhitelist::contains(who),
-					Error::<T>::ExistentialDeposit
+					Error::<T,I>::ExistentialDeposit
 				);
 			}
 
@@ -890,7 +890,7 @@ impl<T: Config<I>, I: 'static> Pallet<T> {
 				.checked_add(&amount)
 				.ok_or(ArithmeticError::Overflow)?;
 			if change_total_issuance {
-				TotalIssuance::<T>::mutate(currency_id, |v| *v = new_total_issuance);
+				TotalIssuance::<T,I>::mutate(currency_id, |v| *v = new_total_issuance);
 			}
 			account.free += amount;
 
@@ -1315,7 +1315,7 @@ impl<T: Config<I>, I: 'static> fungibles::MutateHold<T::AccountId> for Pallet<T,
 		if amount.is_zero() {
 			return Ok(());
 		}
-		ensure!(Self::can_reserve(asset_id, who, amount), Error::<T>::BalanceTooLow);
+		ensure!(Self::can_reserve(asset_id, who, amount), Error::<T,I>::BalanceTooLow);
 		Self::mutate_account(who, asset_id, |a, _| {
 			// `can_reserve` has did underflow checking
 			a.free -= amount;
@@ -1478,7 +1478,7 @@ where
 	/// new account.
 	fn deposit_creating(who: &T::AccountId, value: Self::Balance) -> Self::PositiveImbalance {
 		// do not change total issuance
-		Pallet::<T>::do_deposit(GetCurrencyId::get(), who, value, false, false)
+		Pallet::<T,I>::do_deposit(GetCurrencyId::get(), who, value, false, false)
 			.map_or_else(|_| Self::PositiveImbalance::zero(), |_| PositiveImbalance::new(value))
 	}
 
@@ -1590,10 +1590,10 @@ where
 	}
 }
 
-impl<T: Config> TransferAll<T::AccountId> for Pallet<T> {
+impl<T: Config<I>, I: 'static> TransferAll<T::AccountId> for Pallet<T,I> {
 	#[transactional]
 	fn transfer_all(source: &T::AccountId, dest: &T::AccountId) -> DispatchResult {
-		Accounts::<T>::iter_prefix(source).try_for_each(|(currency_id, account_data)| -> DispatchResult {
+		Accounts::<T,I>::iter_prefix(source).try_for_each(|(currency_id, account_data)| -> DispatchResult {
 			// allow death
 			Self::do_transfer(
 				currency_id,
@@ -1606,7 +1606,7 @@ impl<T: Config> TransferAll<T::AccountId> for Pallet<T> {
 	}
 }
 
-impl<T, GetCurrencyId> fungible::Inspect<T::AccountId> for CurrencyAdapter<T, GetCurrencyId>
+impl<T, I, GetCurrencyId> fungible::Inspect<T::AccountId> for CurrencyAdapter<T, I, GetCurrencyId>
 where
 	T: Config<I>,
 	I: 'static,
