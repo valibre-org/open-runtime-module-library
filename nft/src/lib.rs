@@ -21,13 +21,8 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 #![allow(clippy::unused_unit)]
 
-use codec::{Decode, Encode};
-use frame_support::{
-	ensure,
-	pallet_prelude::*,
-	traits::{Get, MaxEncodedLen},
-	BoundedVec, Parameter,
-};
+use codec::{Decode, Encode, MaxEncodedLen};
+use frame_support::{ensure, pallet_prelude::*, traits::Get, BoundedVec, Parameter};
 use sp_runtime::{
 	traits::{AtLeast32BitUnsigned, CheckedAdd, CheckedSub, MaybeSerializeDeserialize, Member, One, Zero},
 	ArithmeticError, DispatchError, DispatchResult, RuntimeDebug,
@@ -154,8 +149,16 @@ pub mod module {
 	/// Token existence check by owner and class ID.
 	#[pallet::storage]
 	#[pallet::getter(fn tokens_by_owner)]
-	pub type TokensByOwner<T: Config> =
-		StorageDoubleMap<_, Twox64Concat, T::AccountId, Twox64Concat, (T::ClassId, T::TokenId), (), ValueQuery>;
+	pub type TokensByOwner<T: Config> = StorageNMap<
+		_,
+		(
+			NMapKey<Blake2_128Concat, T::AccountId>, // owner
+			NMapKey<Blake2_128Concat, T::ClassId>,
+			NMapKey<Blake2_128Concat, T::TokenId>,
+		),
+		(),
+		ValueQuery,
+	>;
 
 	#[pallet::genesis_config]
 	pub struct GenesisConfig<T: Config> {
@@ -176,7 +179,7 @@ pub mod module {
 				let class_id = Pallet::<T>::create_class(&token_class.0, token_class.1.to_vec(), token_class.2.clone())
 					.expect("Create class cannot fail while building genesis");
 				for (account_id, token_metadata, token_data) in &token_class.3 {
-					Pallet::<T>::mint(&account_id, class_id, token_metadata.to_vec(), token_data.clone())
+					Pallet::<T>::mint(account_id, class_id, token_metadata.to_vec(), token_data.clone())
 						.expect("Token mint cannot fail during genesis");
 				}
 			})
@@ -232,8 +235,8 @@ impl<T: Config> Pallet<T> {
 
 			info.owner = to.clone();
 
-			TokensByOwner::<T>::remove(from, token);
-			TokensByOwner::<T>::insert(to, token, ());
+			TokensByOwner::<T>::remove((from, token.0, token.1));
+			TokensByOwner::<T>::insert((to, token.0, token.1), ());
 
 			Ok(())
 		})
@@ -268,7 +271,7 @@ impl<T: Config> Pallet<T> {
 				data,
 			};
 			Tokens::<T>::insert(class_id, token_id, token_info);
-			TokensByOwner::<T>::insert(owner, (class_id, token_id), ());
+			TokensByOwner::<T>::insert((owner, class_id, token_id), ());
 
 			Ok(token_id)
 		})
@@ -289,7 +292,7 @@ impl<T: Config> Pallet<T> {
 				Ok(())
 			})?;
 
-			TokensByOwner::<T>::remove(owner, token);
+			TokensByOwner::<T>::remove((owner, token.0, token.1));
 
 			Ok(())
 		})
@@ -309,6 +312,6 @@ impl<T: Config> Pallet<T> {
 	}
 
 	pub fn is_owner(account: &T::AccountId, token: (T::ClassId, T::TokenId)) -> bool {
-		TokensByOwner::<T>::contains_key(account, token)
+		TokensByOwner::<T>::contains_key((account, token.0, token.1))
 	}
 }

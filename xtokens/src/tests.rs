@@ -1,13 +1,14 @@
 #![cfg(test)]
 
 use super::*;
+use codec::Encode;
 use cumulus_primitives_core::ParaId;
-use frame_support::{assert_noop, assert_ok, traits::Currency};
+use frame_support::{assert_err, assert_noop, assert_ok, traits::Currency};
 use mock::*;
 use orml_traits::MultiCurrency;
 use polkadot_parachain::primitives::{AccountIdConversion, Sibling};
 use sp_runtime::AccountId32;
-use xcm::v0::{Junction, NetworkId};
+use xcm::v0::{Junction, NetworkId, Order};
 use xcm_simulator::TestExt;
 
 fn para_a_account() -> AccountId32 {
@@ -35,256 +36,410 @@ fn sibling_c_account() -> AccountId32 {
 
 #[test]
 fn send_relay_chain_asset_to_relay_chain() {
-	TestNetwork::reset();
+	TestNet::reset();
 
-	MockRelay::execute_with(|| {
-		let _ = RelayBalances::deposit_creating(&para_a_account(), 100);
+	Relay::execute_with(|| {
+		let _ = RelayBalances::deposit_creating(&para_a_account(), 1_000);
 	});
 
 	ParaA::execute_with(|| {
-		assert_ok!(ParaAXtokens::transfer(
+		assert_ok!(ParaXTokens::transfer(
 			Some(ALICE).into(),
 			CurrencyId::R,
+			500,
+			Box::new(
+				(
+					Parent,
+					Junction::AccountId32 {
+						network: NetworkId::Kusama,
+						id: BOB.into(),
+					},
+				)
+					.into()
+			),
 			30,
-			(
-				Parent,
-				Junction::AccountId32 {
-					network: NetworkId::Polkadot,
-					id: BOB.into(),
-				},
-			)
-				.into(),
 		));
-		assert_eq!(ParaATokens::free_balance(CurrencyId::R, &ALICE), 70);
+		assert_eq!(ParaTokens::free_balance(CurrencyId::R, &ALICE), 500);
 	});
 
-	MockRelay::execute_with(|| {
-		assert_eq!(RelayBalances::free_balance(&para_a_account()), 70);
-		assert_eq!(RelayBalances::free_balance(&BOB), 30);
+	Relay::execute_with(|| {
+		assert_eq!(RelayBalances::free_balance(&para_a_account()), 500);
+		assert_eq!(RelayBalances::free_balance(&BOB), 470);
+	});
+}
+
+#[test]
+fn cannot_lost_fund_on_send_failed() {
+	TestNet::reset();
+
+	ParaA::execute_with(|| {
+		assert_ok!(ParaTokens::deposit(CurrencyId::A, &ALICE, 1_000));
+		assert_noop!(
+			ParaXTokens::transfer(
+				Some(ALICE).into(),
+				CurrencyId::A,
+				500,
+				Box::new(
+					(
+						Parent,
+						Parachain(100),
+						Junction::AccountId32 {
+							network: NetworkId::Kusama,
+							id: BOB.into(),
+						},
+					)
+						.into()
+				),
+				30,
+			),
+			Error::<para::Runtime>::XcmExecutionFailed
+		);
+
+		assert_eq!(ParaTokens::free_balance(CurrencyId::R, &ALICE), 1_000);
 	});
 }
 
 #[test]
 fn send_relay_chain_asset_to_sibling() {
-	TestNetwork::reset();
+	TestNet::reset();
 
-	MockRelay::execute_with(|| {
-		let _ = RelayBalances::deposit_creating(&para_a_account(), 100);
+	Relay::execute_with(|| {
+		let _ = RelayBalances::deposit_creating(&para_a_account(), 1000);
 	});
 
 	ParaA::execute_with(|| {
-		assert_ok!(ParaAXtokens::transfer(
+		assert_ok!(ParaXTokens::transfer(
 			Some(ALICE).into(),
 			CurrencyId::R,
+			500,
+			Box::new(
+				(
+					Parent,
+					Parachain(2),
+					Junction::AccountId32 {
+						network: NetworkId::Any,
+						id: BOB.into(),
+					},
+				)
+					.into()
+			),
 			30,
-			(
-				Parent,
-				Parachain { id: 2 },
-				Junction::AccountId32 {
-					network: NetworkId::Any,
-					id: BOB.into(),
-				},
-			)
-				.into(),
 		));
-		assert_eq!(ParaATokens::free_balance(CurrencyId::R, &ALICE), 70);
+		assert_eq!(ParaTokens::free_balance(CurrencyId::R, &ALICE), 500);
 	});
 
-	MockRelay::execute_with(|| {
-		assert_eq!(RelayBalances::free_balance(&para_a_account()), 70);
-		assert_eq!(RelayBalances::free_balance(&para_b_account()), 30);
+	Relay::execute_with(|| {
+		assert_eq!(RelayBalances::free_balance(&para_a_account()), 500);
+		assert_eq!(RelayBalances::free_balance(&para_b_account()), 470);
 	});
 
 	ParaB::execute_with(|| {
-		assert_eq!(ParaBTokens::free_balance(CurrencyId::R, &BOB), 30);
+		assert_eq!(ParaTokens::free_balance(CurrencyId::R, &BOB), 440);
 	});
 }
 
 #[test]
 fn send_sibling_asset_to_reserve_sibling() {
-	TestNetwork::reset();
+	TestNet::reset();
 
 	ParaA::execute_with(|| {
-		assert_ok!(ParaATokens::deposit(CurrencyId::B, &ALICE, 100));
+		assert_ok!(ParaTokens::deposit(CurrencyId::B, &ALICE, 1_000));
 	});
 
 	ParaB::execute_with(|| {
-		assert_ok!(ParaBTokens::deposit(CurrencyId::B, &sibling_a_account(), 100));
+		assert_ok!(ParaTokens::deposit(CurrencyId::B, &sibling_a_account(), 1_000));
 	});
 
 	ParaA::execute_with(|| {
-		assert_ok!(ParaAXtokens::transfer(
+		assert_ok!(ParaXTokens::transfer(
 			Some(ALICE).into(),
 			CurrencyId::B,
+			500,
+			Box::new(
+				(
+					Parent,
+					Parachain(2),
+					Junction::AccountId32 {
+						network: NetworkId::Any,
+						id: BOB.into(),
+					},
+				)
+					.into()
+			),
 			30,
-			(
-				Parent,
-				Parachain { id: 2 },
-				Junction::AccountId32 {
-					network: NetworkId::Any,
-					id: BOB.into(),
-				},
-			)
-				.into(),
 		));
 
-		assert_eq!(ParaATokens::free_balance(CurrencyId::B, &ALICE), 70);
+		assert_eq!(ParaTokens::free_balance(CurrencyId::B, &ALICE), 500);
 	});
 
 	ParaB::execute_with(|| {
-		assert_eq!(ParaBTokens::free_balance(CurrencyId::B, &sibling_a_account()), 70);
-		assert_eq!(ParaBTokens::free_balance(CurrencyId::B, &BOB), 30);
+		assert_eq!(ParaTokens::free_balance(CurrencyId::B, &sibling_a_account()), 500);
+		assert_eq!(ParaTokens::free_balance(CurrencyId::B, &BOB), 470);
 	});
 }
 
 #[test]
 fn send_sibling_asset_to_non_reserve_sibling() {
-	TestNetwork::reset();
+	TestNet::reset();
 
 	ParaA::execute_with(|| {
-		assert_ok!(ParaATokens::deposit(CurrencyId::B, &ALICE, 100));
+		assert_ok!(ParaTokens::deposit(CurrencyId::B, &ALICE, 1_000));
 	});
 
 	ParaB::execute_with(|| {
-		assert_ok!(ParaBTokens::deposit(CurrencyId::B, &sibling_a_account(), 100));
+		assert_ok!(ParaTokens::deposit(CurrencyId::B, &sibling_a_account(), 1_000));
 	});
 
 	ParaA::execute_with(|| {
-		assert_ok!(ParaAXtokens::transfer(
+		assert_ok!(ParaXTokens::transfer(
 			Some(ALICE).into(),
 			CurrencyId::B,
-			30,
-			(
-				Parent,
-				Parachain { id: 3 },
-				Junction::AccountId32 {
-					network: NetworkId::Any,
-					id: BOB.into(),
-				},
-			)
-				.into(),
+			500,
+			Box::new(
+				(
+					Parent,
+					Parachain(3),
+					Junction::AccountId32 {
+						network: NetworkId::Any,
+						id: BOB.into(),
+					},
+				)
+					.into()
+			),
+			30
 		));
-		assert_eq!(ParaATokens::free_balance(CurrencyId::B, &ALICE), 70);
+		assert_eq!(ParaTokens::free_balance(CurrencyId::B, &ALICE), 500);
 	});
 
 	// check reserve accounts
 	ParaB::execute_with(|| {
-		assert_eq!(ParaBTokens::free_balance(CurrencyId::B, &sibling_a_account()), 70);
-		assert_eq!(ParaBTokens::free_balance(CurrencyId::B, &sibling_c_account()), 30);
+		assert_eq!(ParaTokens::free_balance(CurrencyId::B, &sibling_a_account()), 500);
+		assert_eq!(ParaTokens::free_balance(CurrencyId::B, &sibling_c_account()), 470);
 	});
 
 	ParaC::execute_with(|| {
-		assert_eq!(ParaCTokens::free_balance(CurrencyId::B, &BOB), 30);
+		assert_eq!(ParaTokens::free_balance(CurrencyId::B, &BOB), 440);
 	});
 }
 
 #[test]
 fn send_self_parachain_asset_to_sibling() {
-	TestNetwork::reset();
+	TestNet::reset();
 
 	ParaA::execute_with(|| {
-		assert_ok!(ParaATokens::deposit(CurrencyId::A, &ALICE, 100));
+		assert_ok!(ParaTokens::deposit(CurrencyId::A, &ALICE, 1_000));
 
-		assert_ok!(ParaAXtokens::transfer(
+		assert_ok!(ParaXTokens::transfer(
 			Some(ALICE).into(),
 			CurrencyId::A,
+			500,
+			Box::new(
+				(
+					Parent,
+					Parachain(2),
+					Junction::AccountId32 {
+						network: NetworkId::Any,
+						id: BOB.into(),
+					},
+				)
+					.into()
+			),
 			30,
-			(
-				Parent,
-				Parachain { id: 2 },
-				Junction::AccountId32 {
-					network: NetworkId::Any,
-					id: BOB.into(),
-				},
-			)
-				.into(),
 		));
 
-		assert_eq!(ParaATokens::free_balance(CurrencyId::A, &ALICE), 70);
-		assert_eq!(ParaATokens::free_balance(CurrencyId::A, &sibling_b_account()), 30);
+		assert_eq!(ParaTokens::free_balance(CurrencyId::A, &ALICE), 500);
+		assert_eq!(ParaTokens::free_balance(CurrencyId::A, &sibling_b_account()), 500);
 	});
 
 	ParaB::execute_with(|| {
-		para_b::System::events().iter().for_each(|r| {
-			println!(">>> {:?}", r.event);
-		});
-		assert_eq!(ParaBTokens::free_balance(CurrencyId::A, &BOB), 30);
+		assert_eq!(ParaTokens::free_balance(CurrencyId::A, &BOB), 470);
 	});
 }
 
 #[test]
 fn transfer_no_reserve_assets_fails() {
-	TestNetwork::reset();
+	TestNet::reset();
 
 	ParaA::execute_with(|| {
 		assert_noop!(
-			ParaAXtokens::transfer_multiasset(
+			ParaXTokens::transfer_multiasset(
 				Some(ALICE).into(),
-				MultiAsset::ConcreteFungible {
+				Box::new(MultiAsset::ConcreteFungible {
 					id: GeneralKey("B".into()).into(),
-					amount: 1
-				},
-				(
-					Parent,
-					Parachain { id: 2 },
-					Junction::AccountId32 {
-						network: NetworkId::Any,
-						id: BOB.into()
-					}
-				)
-					.into()
+					amount: 100
+				}),
+				Box::new(
+					(
+						Parent,
+						Parachain(2),
+						Junction::AccountId32 {
+							network: NetworkId::Any,
+							id: BOB.into()
+						}
+					)
+						.into()
+				),
+				50,
 			),
-			Error::<para_a::Runtime>::AssetHasNoReserve
+			Error::<para::Runtime>::AssetHasNoReserve
 		);
 	});
 }
 
 #[test]
 fn transfer_to_self_chain_fails() {
-	TestNetwork::reset();
+	TestNet::reset();
 
 	ParaA::execute_with(|| {
 		assert_noop!(
-			ParaAXtokens::transfer_multiasset(
+			ParaXTokens::transfer_multiasset(
 				Some(ALICE).into(),
-				MultiAsset::ConcreteFungible {
-					id: (Parent, Parachain { id: 1 }, GeneralKey("A".into())).into(),
-					amount: 1
-				},
-				(
-					Parent,
-					Parachain { id: 1 },
-					Junction::AccountId32 {
-						network: NetworkId::Any,
-						id: BOB.into()
-					}
-				)
-					.into()
+				Box::new(MultiAsset::ConcreteFungible {
+					id: (Parent, Parachain(1), GeneralKey("A".into())).into(),
+					amount: 100
+				}),
+				Box::new(
+					(
+						Parent,
+						Parachain(1),
+						Junction::AccountId32 {
+							network: NetworkId::Any,
+							id: BOB.into()
+						}
+					)
+						.into()
+				),
+				50,
 			),
-			Error::<para_a::Runtime>::NotCrossChainTransfer
+			Error::<para::Runtime>::NotCrossChainTransfer
 		);
 	});
 }
 
 #[test]
 fn transfer_to_invalid_dest_fails() {
-	TestNetwork::reset();
+	TestNet::reset();
 
 	ParaA::execute_with(|| {
 		assert_noop!(
-			ParaAXtokens::transfer_multiasset(
+			ParaXTokens::transfer_multiasset(
 				Some(ALICE).into(),
-				MultiAsset::ConcreteFungible {
-					id: (Parent, Parachain { id: 1 }, GeneralKey("A".into())).into(),
-					amount: 1
-				},
-				(Junction::AccountId32 {
-					network: NetworkId::Any,
-					id: BOB.into()
-				})
-				.into()
+				Box::new(MultiAsset::ConcreteFungible {
+					id: (Parent, Parachain(1), GeneralKey("A".into())).into(),
+					amount: 100,
+				}),
+				Box::new(
+					(Junction::AccountId32 {
+						network: NetworkId::Any,
+						id: BOB.into()
+					})
+					.into()
+				),
+				50,
 			),
-			Error::<para_a::Runtime>::InvalidDest
+			Error::<para::Runtime>::InvalidDest
 		);
 	});
+}
+
+#[test]
+fn send_as_sovereign() {
+	TestNet::reset();
+
+	Relay::execute_with(|| {
+		let _ = RelayBalances::deposit_creating(&para_a_account(), 1_000_000_000_000);
+	});
+
+	ParaA::execute_with(|| {
+		use xcm::v0::OriginKind::SovereignAccount;
+
+		let call = relay::Call::System(frame_system::Call::<relay::Runtime>::remark_with_event(vec![1, 1, 1]));
+		assert_ok!(para::OrmlXcm::send_as_sovereign(
+			para::Origin::root(),
+			Box::new(Junction::Parent.into()),
+			Box::new(WithdrawAsset {
+				assets: vec![MultiAsset::ConcreteFungible {
+					id: MultiLocation::Null,
+					amount: 1_000_000_000_000
+				}],
+				effects: vec![Order::BuyExecution {
+					fees: MultiAsset::All,
+					weight: 10_000_000,
+					debt: 10_000_000,
+					halt_on_error: true,
+					xcm: vec![Transact {
+						origin_type: SovereignAccount,
+						require_weight_at_most: 1_000_000_000,
+						call: call.encode().into(),
+					}],
+				}]
+			})
+		));
+	});
+
+	Relay::execute_with(|| {
+		relay::System::events().iter().any(|r| {
+			matches!(
+				r.event,
+				relay::Event::System(frame_system::Event::<relay::Runtime>::Remarked(_, _))
+			)
+		});
+	})
+}
+
+#[test]
+fn send_as_sovereign_fails_if_bad_origin() {
+	TestNet::reset();
+
+	Relay::execute_with(|| {
+		let _ = RelayBalances::deposit_creating(&para_a_account(), 1_000_000_000_000);
+	});
+
+	ParaA::execute_with(|| {
+		use xcm::v0::OriginKind::SovereignAccount;
+
+		let call = relay::Call::System(frame_system::Call::<relay::Runtime>::remark_with_event(vec![1, 1, 1]));
+		assert_err!(
+			para::OrmlXcm::send_as_sovereign(
+				para::Origin::signed(ALICE),
+				Box::new(Junction::Parent.into()),
+				Box::new(WithdrawAsset {
+					assets: vec![MultiAsset::ConcreteFungible {
+						id: MultiLocation::Null,
+						amount: 1_000_000_000_000
+					}],
+					effects: vec![Order::BuyExecution {
+						fees: MultiAsset::All,
+						weight: 10_000_000,
+						debt: 10_000_000,
+						halt_on_error: true,
+						xcm: vec![Transact {
+							origin_type: SovereignAccount,
+							require_weight_at_most: 1_000_000_000,
+							call: call.encode().into(),
+						}],
+					}]
+				})
+			),
+			DispatchError::BadOrigin,
+		);
+	});
+}
+
+#[test]
+fn call_size_limit() {
+	// Ensures Call enum doesn't allocate more than 200 bytes in runtime
+	assert!(
+		core::mem::size_of::<crate::Call::<crate::tests::para::Runtime>>() <= 200,
+		"size of Call is more than 200 bytes: some calls have too big arguments, use Box to \
+		reduce the size of Call.
+		If the limit is too strong, maybe consider increasing the limit",
+	);
+
+	assert!(
+		core::mem::size_of::<orml_xcm::Call::<crate::tests::para::Runtime>>() <= 200,
+		"size of Call is more than 200 bytes: some calls have too big arguments, use Box to \
+		reduce the size of Call.
+		If the limit is too strong, maybe consider increasing the limit",
+	);
 }

@@ -21,16 +21,18 @@ pub use get_by_key::GetByKey;
 pub use nft::NFT;
 pub use price::{DefaultPriceProvider, PriceProvider};
 pub use rewards::RewardHandler;
+pub use xcm_transfer::XcmTransfer;
 
 pub mod arithmetic;
 pub mod auction;
 pub mod currency;
 pub mod data_provider;
 pub mod get_by_key;
-// pub mod location;
+pub mod location;
 pub mod nft;
 pub mod price;
 pub mod rewards;
+pub mod xcm_transfer;
 
 /// New data handler
 #[impl_trait_for_tuples::impl_for_tuples(30)]
@@ -80,8 +82,4 @@ impl<T> Handler<T> for Tuple {
 		for_tuples!( #( Tuple::handle(t); )* );
 		Ok(())
 	}
-}
-
-pub trait Contains<T> {
-	fn contains(t: &T) -> bool;
 }

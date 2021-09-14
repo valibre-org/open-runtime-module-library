@@ -4,17 +4,18 @@
 mod mock;
 mod tests;
 
-use codec::{FullCodec, HasCompact};
-use frame_support::{pallet_prelude::*, traits::MaxEncodedLen};
-use orml_traits::RewardHandler;
+use codec::{FullCodec, HasCompact, MaxEncodedLen};
+use frame_support::pallet_prelude::*;
 use sp_runtime::{
-	traits::{AtLeast32BitUnsigned, MaybeSerializeDeserialize, Member, Saturating, Zero},
+	traits::{AtLeast32BitUnsigned, Bounded, MaybeSerializeDeserialize, Member, Saturating, Zero},
 	FixedPointNumber, FixedPointOperand, FixedU128, RuntimeDebug,
 };
 use sp_std::{
 	cmp::{Eq, PartialEq},
 	fmt::Debug,
 };
+
+use orml_traits::RewardHandler;
 
 /// The Reward Pool Info.
 #[derive(Clone, Encode, Decode, PartialEq, Eq, RuntimeDebug, Default, MaxEncodedLen)]
@@ -102,8 +103,13 @@ impl<T: Config> Pallet<T> {
 		}
 
 		Pools::<T>::mutate(pool, |pool_info| {
-			let proportion = FixedU128::checked_from_rational(add_amount, pool_info.total_shares).unwrap_or_default();
-			let reward_inflation = proportion.saturating_mul_int(pool_info.total_rewards);
+			let reward_inflation = if pool_info.total_shares.is_zero() {
+				Zero::zero()
+			} else {
+				let proportion = FixedU128::checked_from_rational(add_amount, pool_info.total_shares)
+					.unwrap_or_else(FixedU128::max_value);
+				proportion.saturating_mul_int(pool_info.total_rewards)
+			};
 
 			pool_info.total_shares = pool_info.total_shares.saturating_add(add_amount);
 			pool_info.total_rewards = pool_info.total_rewards.saturating_add(reward_inflation);
@@ -124,27 +130,33 @@ impl<T: Config> Pallet<T> {
 		// claim rewards firstly
 		Self::claim_rewards(who, pool);
 
-		ShareAndWithdrawnReward::<T>::mutate(pool, who, |(share, withdrawn_rewards)| {
-			let remove_amount = remove_amount.min(*share);
+		ShareAndWithdrawnReward::<T>::mutate_exists(pool, who, |share_info| {
+			if let Some((mut share, mut withdrawn_rewards)) = share_info.take() {
+				let remove_amount = remove_amount.min(share);
 
-			if remove_amount.is_zero() {
-				return;
+				if remove_amount.is_zero() {
+					return;
+				}
+
+				Pools::<T>::mutate(pool, |pool_info| {
+					let proportion = FixedU128::checked_from_rational(remove_amount, share)
+						.expect("share is gte remove_amount and not zero which checked before; qed");
+					let withdrawn_rewards_to_remove = proportion.saturating_mul_int(withdrawn_rewards);
+
+					pool_info.total_shares = pool_info.total_shares.saturating_sub(remove_amount);
+					pool_info.total_rewards = pool_info.total_rewards.saturating_sub(withdrawn_rewards_to_remove);
+					pool_info.total_withdrawn_rewards = pool_info
+						.total_withdrawn_rewards
+						.saturating_sub(withdrawn_rewards_to_remove);
+
+					withdrawn_rewards = withdrawn_rewards.saturating_sub(withdrawn_rewards_to_remove);
+				});
+
+				share = share.saturating_sub(remove_amount);
+				if !share.is_zero() {
+					*share_info = Some((share, withdrawn_rewards));
+				}
 			}
-
-			Pools::<T>::mutate(pool, |pool_info| {
-				let proportion = FixedU128::checked_from_rational(remove_amount, *share).unwrap_or_default();
-				let withdrawn_rewards_to_remove = proportion.saturating_mul_int(*withdrawn_rewards);
-
-				pool_info.total_shares = pool_info.total_shares.saturating_sub(remove_amount);
-				pool_info.total_rewards = pool_info.total_rewards.saturating_sub(withdrawn_rewards_to_remove);
-				pool_info.total_withdrawn_rewards = pool_info
-					.total_withdrawn_rewards
-					.saturating_sub(withdrawn_rewards_to_remove);
-
-				*withdrawn_rewards = withdrawn_rewards.saturating_sub(withdrawn_rewards_to_remove);
-			});
-
-			*share = share.saturating_sub(remove_amount);
 		});
 	}
 

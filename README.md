@@ -1,6 +1,7 @@
 # open-runtime-module-library
 
 [![Crates.io](https://img.shields.io/crates/v/orml-tokens)](https://crates.io/search?q=orml)
+[![codecov](https://codecov.io/gh/open-web3-stack/open-runtime-module-library/branch/master/graph/badge.svg?token=FZ4HZYMW9A)](https://codecov.io/gh/open-web3-stack/open-runtime-module-library)
 [![GitHub](https://img.shields.io/github/license/open-web3-stack/open-runtime-module-library)](https://github.com/open-web3-stack/open-runtime-module-library/blob/master/LICENSE)
 
 The Open Runtime Module Library (ORML) is a community maintained collection of Substrate runtime modules.
@@ -73,6 +74,7 @@ _In alphabetical order_
 - [Manta Network](https://github.com/Manta-Network)
 - [Minterest](https://github.com/minterest-finance/minterest-chain-node)
 - [Plasm Network](https://github.com/PlasmNetwork)
+- [PolkaFoundry Network](https://github.com/PolkaFoundry)
 - [Setheum Network](https://github.com/Setheum-Labs/Setheum)
 - [Valiu Liquidity Network](https://github.com/valibre-org/vln-node)
 - [Zeitgeist](https://github.com/zeitgeistpm/zeitgeist)

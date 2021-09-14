@@ -89,6 +89,9 @@ pub mod module {
 
 		/// Weight information for extrinsics in this module.
 		type WeightInfo: WeightInfo;
+
+		/// Maximum size of HasDispatched
+		type MaxHasDispatchedSize: Get<u32>;
 	}
 
 	#[pallet::error]
@@ -101,6 +104,7 @@ pub mod module {
 
 	#[pallet::event]
 	#[pallet::generate_deposit(pub(crate) fn deposit_event)]
+	#[pallet::metadata(T::AccountId = "AccountId", Vec<(T::OracleKey, T::OracleValue)> = "Vec<(OracleKey, OracleValue)>")]
 	pub enum Event<T: Config<I>, I: 'static = ()> {
 		/// New feed data is submitted. [sender, values]
 		NewFeedData(T::AccountId, Vec<(T::OracleKey, T::OracleValue)>),
@@ -127,7 +131,7 @@ pub mod module {
 	/// If an oracle operator has feed a value in this block
 	#[pallet::storage]
 	pub(crate) type HasDispatched<T: Config<I>, I: 'static = ()> =
-		StorageValue<_, OrderedSet<T::AccountId>, ValueQuery>;
+		StorageValue<_, OrderedSet<T::AccountId, T::MaxHasDispatchedSize>, ValueQuery>;
 
 	#[pallet::pallet]
 	pub struct Pallet<T, I = ()>(PhantomData<(T, I)>);
@@ -237,7 +241,7 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
 			RawValues::<T, I>::insert(&who, &key, timestamped);
 			IsUpdated::<T, I>::remove(&key);
 
-			T::OnNewData::on_new_data(&who, &key, &value);
+			T::OnNewData::on_new_data(&who, key, value);
 		}
 		Self::deposit_event(Event::NewFeedData(who, values));
 		Ok(())
@@ -248,11 +252,11 @@ impl<T: Config<I>, I: 'static> ChangeMembers<T::AccountId> for Pallet<T, I> {
 	fn change_members_sorted(_incoming: &[T::AccountId], outgoing: &[T::AccountId], _new: &[T::AccountId]) {
 		// remove values
 		for removed in outgoing {
-			RawValues::<T, I>::remove_prefix(removed);
+			RawValues::<T, I>::remove_prefix(removed, None);
 		}
 
 		// not bothering to track which key needs recompute, just update all
-		IsUpdated::<T, I>::remove_all();
+		IsUpdated::<T, I>::remove_all(None);
 	}
 
 	fn set_prime(_prime: Option<T::AccountId>) {
