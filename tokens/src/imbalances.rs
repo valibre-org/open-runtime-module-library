@@ -158,13 +158,13 @@ impl<T: Config<I>, I : 'static> Imbalance<T::Balance> for NegativeImbalance<T, I
 impl<T: Config<I>, I: 'static> Drop for PositiveImbalance<T, I> {
 	/// Basic drop handler will just square up the total issuance.
 	fn drop(&mut self) {
-		TotalIssuance::<T, I>::mutate(T::CurrencyId::default(), |v| *v = v.saturating_add(self.0));
+		//TotalIssuance::<T, I>::mutate(T::CurrencyId::default(), |v| *v = v.saturating_add(self.0));
 	}
 }
 
 impl<T: Config<I>, I: 'static> Drop for NegativeImbalance<T, I> {
 	/// Basic drop handler will just square up the total issuance.
 	fn drop(&mut self) {
-		TotalIssuance::<T, I>::mutate(T::CurrencyId::default(), |v| *v = v.saturating_sub(self.0));
+		//TotalIssuance::<T, I>::mutate(T::CurrencyId::default(), |v| *v = v.saturating_sub(self.0));
 	}
 }

@@ -234,7 +234,7 @@ pub mod module {
 
 	#[pallet::event]
 	#[pallet::generate_deposit(pub(crate) fn deposit_event)]
-	pub enum Event<T: Config> {
+	pub enum Event<T: Config<I>, I: 'static = ()> {
 		/// An account was created with some free balance. \[currency_id,
 		/// account, free_balance\]
 		Endowed(T::CurrencyId, T::AccountId, T::Balance),
@@ -1196,7 +1196,7 @@ impl<T: Config<I>, I: 'static> MultiReservableCurrency<T::AccountId> for Pallet<
 			}
 		}
 		Self::set_reserved_balance(currency_id, slashed, from_account.reserved - actual);
-		Self::deposit_event(Event::<T>::RepatriatedReserve(
+		Self::deposit_event(Event::<T, I>::RepatriatedReserve(
 			currency_id,
 			slashed.clone(),
 			beneficiary.clone(),
@@ -1368,7 +1368,7 @@ impl<T: Config<I>, I: 'static> fungibles::MutateHold<T::AccountId> for Pallet<T,
 		let status = if on_hold { Status::Reserved } else { Status::Free };
 		ensure!(
 			amount <= <Self as fungibles::InspectHold<T::AccountId>>::balance_on_hold(asset_id, source) || best_effort,
-			Error::<T>::BalanceTooLow
+			Error::<T, I>::BalanceTooLow
 		);
 		let gap = Self::repatriate_reserved(asset_id, source, dest, amount, status)?;
 		// return actual transferred amount
