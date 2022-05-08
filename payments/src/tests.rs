@@ -1,10 +1,10 @@
 use crate::{
 	mock::*,
 	types::{PaymentDetail, PaymentState},
-	Payment as PaymentStore, PaymentHandler, ScheduledTask, ScheduledTasks, Task,
+	Payment as PaymentStore, PaymentHandler, ScheduledTask, ScheduledTasks, Task, PALLET_RESERVE_ID,
 };
 use frame_support::{assert_noop, assert_ok, storage::with_transaction};
-use orml_traits::MultiCurrency;
+use orml_traits::{MultiCurrency, MultiReservableCurrency, NamedMultiReservableCurrency};
 use sp_runtime::{Percent, TransactionOutcome};
 
 type Error = crate::Error<Test>;
@@ -63,14 +63,24 @@ fn test_pay_works() {
 			Tokens::free_balance(CURRENCY_ID, &PAYMENT_CREATOR),
 			creator_initial_balance - payment_amount - expected_incentive_amount
 		);
+
 		// the incentive amount should be reserved in the sender account
 		assert_eq!(
-			Tokens::total_balance(CURRENCY_ID, &PAYMENT_CREATOR),
-			creator_initial_balance - payment_amount
+			Tokens::reserved_balance(CURRENCY_ID, &PAYMENT_CREATOR),
+			expected_incentive_amount
 		);
+		assert_eq!(
+			Tokens::reserved_balance_named(&PALLET_RESERVE_ID, CURRENCY_ID, &PAYMENT_CREATOR),
+			expected_incentive_amount
+		);
+
 		assert_eq!(Tokens::free_balance(CURRENCY_ID, &PAYMENT_RECIPENT), 0);
 		// the transferred amount should be reserved in the recipent account
-		assert_eq!(Tokens::total_balance(CURRENCY_ID, &PAYMENT_RECIPENT), payment_amount);
+		assert_eq!(Tokens::reserved_balance(CURRENCY_ID, &PAYMENT_RECIPENT), payment_amount);
+		assert_eq!(
+			Tokens::reserved_balance_named(&PALLET_RESERVE_ID, CURRENCY_ID, &PAYMENT_RECIPENT),
+			payment_amount
+		);
 
 		// the payment should not be overwritten
 		assert_noop!(
@@ -95,6 +105,8 @@ fn test_pay_works() {
 				fee_detail: Some((FEE_RECIPIENT_ACCOUNT, 0)),
 			})
 		);
+
+		assert_eq!(System::consumers(&PAYMENT_CREATOR), 1);
 	});
 }
 
@@ -131,6 +143,10 @@ fn test_cancel_works() {
 			creator_initial_balance - payment_amount - expected_incentive_amount
 		);
 		assert_eq!(Tokens::free_balance(CURRENCY_ID, &PAYMENT_RECIPENT), 0);
+		assert_eq!(
+			Tokens::reserved_balance_named(&PALLET_RESERVE_ID, CURRENCY_ID, &PAYMENT_RECIPENT),
+			payment_amount
+		);
 
 		// cancel should succeed when caller is the recipent
 		assert_ok!(Payment::cancel(Origin::signed(PAYMENT_RECIPENT), PAYMENT_CREATOR));
@@ -147,10 +163,22 @@ fn test_cancel_works() {
 			Tokens::free_balance(CURRENCY_ID, &PAYMENT_CREATOR),
 			creator_initial_balance
 		);
+		assert_eq!(
+			Tokens::reserved_balance_named(&PALLET_RESERVE_ID, CURRENCY_ID, &PAYMENT_CREATOR),
+			0
+		);
+
+		// the receiver balance should be same as previous
 		assert_eq!(Tokens::free_balance(CURRENCY_ID, &PAYMENT_RECIPENT), 0);
+		assert_eq!(
+			Tokens::reserved_balance_named(&PALLET_RESERVE_ID, CURRENCY_ID, &PAYMENT_RECIPENT),
+			0
+		);
 
 		// should be released from storage
 		assert_eq!(PaymentStore::<Test>::get(PAYMENT_CREATOR, PAYMENT_RECIPENT), None);
+
+		assert_eq!(System::consumers(&PAYMENT_CREATOR), 0);
 	});
 }
 
@@ -206,6 +234,7 @@ fn test_release_works() {
 
 		// should be deleted from storage
 		assert_eq!(PaymentStore::<Test>::get(PAYMENT_CREATOR, PAYMENT_RECIPENT), None);
+		assert_eq!(System::consumers(&PAYMENT_CREATOR), 0);
 
 		// should be able to create another payment since previous is released
 		assert_ok!(Payment::pay(
@@ -1387,5 +1416,30 @@ fn test_automatic_refund_works_for_multiple_payments() {
 
 		assert_eq!(Tokens::free_balance(CURRENCY_ID, &PAYMENT_CREATOR_TWO), 100);
 		assert_eq!(Tokens::free_balance(CURRENCY_ID, &PAYMENT_RECIPENT_TWO), 0);
+	});
+}
+
+#[test]
+fn test_reap_will_not_kill_sender_account() {
+	new_test_ext().execute_with(|| {
+		assert_eq!(System::providers(&PAYMENT_CREATOR), 1);
+		assert_eq!(System::consumers(&PAYMENT_CREATOR), 0);
+		assert!(System::account_exists(&PAYMENT_CREATOR));
+
+		assert_ok!(Payment::pay(
+			Origin::signed(PAYMENT_CREATOR),
+			PAYMENT_RECIPENT,
+			CURRENCY_ID,
+			20,
+			None
+		));
+
+		assert_eq!(System::providers(&PAYMENT_CREATOR), 1);
+		assert_eq!(System::consumers(&PAYMENT_CREATOR), 1);
+
+		// transfer the entire free balance
+		assert_eq!(Tokens::slash(CURRENCY_ID, &PAYMENT_CREATOR, 100,), 20);
+		assert_eq!(Tokens::total_balance(CURRENCY_ID, &PAYMENT_CREATOR), 0);
+		assert!(System::account_exists(&PAYMENT_CREATOR));
 	});
 }
