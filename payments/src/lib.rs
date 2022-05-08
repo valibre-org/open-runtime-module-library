@@ -76,12 +76,14 @@ pub mod pallet {
 		storage::bounded_btree_map::BoundedBTreeMap, traits::tokens::BalanceStatus, transactional,
 	};
 	use frame_system::pallet_prelude::*;
-	use orml_traits::{MultiCurrency, MultiReservableCurrency};
+	use orml_traits::{LockIdentifier, MultiCurrency, NamedMultiReservableCurrency};
 	use sp_runtime::{
 		traits::{CheckedAdd, Saturating},
 		Percent,
 	};
 	use sp_std::vec::Vec;
+
+	pub const PALLET_RESERVE_ID: LockIdentifier = *b"payments";
 
 	pub type BalanceOf<T> = <<T as Config>::Asset as MultiCurrency<<T as frame_system::Config>::AccountId>>::Balance;
 	pub type AssetIdOf<T> = <<T as Config>::Asset as MultiCurrency<<T as frame_system::Config>::AccountId>>::CurrencyId;
@@ -104,7 +106,7 @@ pub mod pallet {
 		/// definition of an event.
 		type Event: From<Event<Self>> + IsType<<Self as frame_system::Config>::Event>;
 		/// the type of assets this pallet can hold in payment
-		type Asset: MultiReservableCurrency<Self::AccountId>;
+		type Asset: NamedMultiReservableCurrency<Self::AccountId, ReserveIdentifier = LockIdentifier>;
 		/// Dispute resolution account
 		type DisputeResolver: DisputeResolver<Self::AccountId>;
 		/// Fee handler trait
@@ -603,9 +605,16 @@ pub mod pallet {
 			let total_amount = total_fee_amount.saturating_add(payment.amount);
 
 			// reserve the total amount from payment creator
-			T::Asset::reserve(payment.asset, from, total_amount)?;
+			T::Asset::reserve_named(&PALLET_RESERVE_ID, payment.asset, from, total_amount)?;
 			// transfer payment amount to recipient -- keeping reserve status
-			T::Asset::repatriate_reserved(payment.asset, from, to, payment.amount, BalanceStatus::Reserved)?;
+			T::Asset::repatriate_reserved_named(
+				&PALLET_RESERVE_ID,
+				payment.asset,
+				from,
+				to,
+				payment.amount,
+				BalanceStatus::Reserved,
+			)?;
 			Ok(())
 		}
 
@@ -623,7 +632,12 @@ pub mod pallet {
 				// unreserve the incentive amount and fees from the owner account
 				match payment.fee_detail {
 					Some((fee_recipient, fee_amount)) => {
-						T::Asset::unreserve(payment.asset, from, payment.incentive_amount + fee_amount);
+						T::Asset::unreserve_named(
+							&PALLET_RESERVE_ID,
+							payment.asset,
+							from,
+							payment.incentive_amount + fee_amount,
+						);
 						// transfer fee to marketplace if operation is not cancel
 						if recipient_share != Percent::zero() {
 							T::Asset::transfer(
@@ -635,12 +649,12 @@ pub mod pallet {
 						}
 					}
 					None => {
-						T::Asset::unreserve(payment.asset, from, payment.incentive_amount);
+						T::Asset::unreserve_named(&PALLET_RESERVE_ID, payment.asset, from, payment.incentive_amount);
 					}
 				};
 
 				// Unreserve the transfer amount
-				T::Asset::unreserve(payment.asset, to, payment.amount);
+				T::Asset::unreserve_named(&PALLET_RESERVE_ID, payment.asset, to, payment.amount);
 
 				let amount_to_recipient = recipient_share.mul_floor(payment.amount);
 				let amount_to_sender = payment.amount.saturating_sub(amount_to_recipient);
