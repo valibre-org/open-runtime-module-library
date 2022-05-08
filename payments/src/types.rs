@@ -27,8 +27,8 @@ pub struct PaymentDetail<T: pallet::Config> {
 	pub state: PaymentState<T>,
 	/// account that can settle any disputes created in the payment
 	pub resolver_account: T::AccountId,
-	/// fee charged and recipient account details
-	pub fee_detail: Option<(T::AccountId, BalanceOf<T>)>,
+	/// fee charged details
+	pub fee_amount: BalanceOf<T>,
 }
 
 /// The `PaymentState` enum tracks the possible states that a payment can be in.
@@ -95,13 +95,16 @@ pub trait DisputeResolver<Account> {
 /// Fee Handler trait that defines how to handle marketplace fees to every
 /// payment/swap
 pub trait FeeHandler<T: pallet::Config> {
-	/// Get the distribution of fees to marketplace participants
-	fn apply_fees(
+	/// Get the amount of fee to charge user
+	fn get_fee_amount(
 		from: &T::AccountId,
 		to: &T::AccountId,
 		detail: &PaymentDetail<T>,
 		remark: Option<&[u8]>,
-	) -> (T::AccountId, Percent);
+	) -> BalanceOf<T>;
+
+	/// Deduct the fee from the user transaction
+	fn apply_fees(from: &T::AccountId, to: &T::AccountId, detail: &PaymentDetail<T>) -> DispatchResult;
 }
 
 /// Types of Tasks that can be scheduled in the pallet

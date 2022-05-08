@@ -5,7 +5,7 @@ use crate::{
 };
 use frame_support::{assert_noop, assert_ok, storage::with_transaction};
 use orml_traits::{MultiCurrency, MultiReservableCurrency, NamedMultiReservableCurrency};
-use sp_runtime::{Percent, TransactionOutcome};
+use sp_runtime::{traits::Zero, Percent, TransactionOutcome};
 
 type Error = crate::Error<Test>;
 
@@ -54,7 +54,7 @@ fn test_pay_works() {
 				incentive_amount: expected_incentive_amount,
 				state: PaymentState::Created,
 				resolver_account: RESOLVER_ACCOUNT,
-				fee_detail: Some((FEE_RECIPIENT_ACCOUNT, 0)),
+				fee_amount: Zero::zero(),
 			})
 		);
 		// the payment amount should be reserved correctly
@@ -102,7 +102,7 @@ fn test_pay_works() {
 				incentive_amount: 2,
 				state: PaymentState::Created,
 				resolver_account: RESOLVER_ACCOUNT,
-				fee_detail: Some((FEE_RECIPIENT_ACCOUNT, 0)),
+				fee_amount: Zero::zero(),
 			})
 		);
 
@@ -134,7 +134,7 @@ fn test_cancel_works() {
 				incentive_amount: expected_incentive_amount,
 				state: PaymentState::Created,
 				resolver_account: RESOLVER_ACCOUNT,
-				fee_detail: Some((FEE_RECIPIENT_ACCOUNT, 0)),
+				fee_amount: Zero::zero(),
 			})
 		);
 		// the payment amount should be reserved
@@ -205,7 +205,7 @@ fn test_release_works() {
 				incentive_amount: expected_incentive_amount,
 				state: PaymentState::Created,
 				resolver_account: RESOLVER_ACCOUNT,
-				fee_detail: Some((FEE_RECIPIENT_ACCOUNT, 0)),
+				fee_amount: Zero::zero(),
 			})
 		);
 		// the payment amount should be reserved
@@ -367,7 +367,7 @@ fn test_charging_fee_payment_works() {
 				incentive_amount: expected_incentive_amount,
 				state: PaymentState::Created,
 				resolver_account: RESOLVER_ACCOUNT,
-				fee_detail: Some((FEE_RECIPIENT_ACCOUNT, expected_fee_amount)),
+				fee_amount: expected_fee_amount
 			})
 		);
 		// the payment amount should be reserved
@@ -426,7 +426,7 @@ fn test_charging_fee_payment_works_when_canceled() {
 				incentive_amount: expected_incentive_amount,
 				state: PaymentState::Created,
 				resolver_account: RESOLVER_ACCOUNT,
-				fee_detail: Some((FEE_RECIPIENT_ACCOUNT, expected_fee_amount)),
+				fee_amount: expected_fee_amount,
 			})
 		);
 		// the payment amount should be reserved
@@ -475,7 +475,7 @@ fn test_pay_with_remark_works() {
 				incentive_amount: expected_incentive_amount,
 				state: PaymentState::Created,
 				resolver_account: RESOLVER_ACCOUNT,
-				fee_detail: Some((FEE_RECIPIENT_ACCOUNT, 0)),
+				fee_amount: Zero::zero(),
 			})
 		);
 		// the payment amount should be reserved correctly
@@ -553,7 +553,7 @@ fn test_do_not_overwrite_logic_works() {
 				incentive_amount: expected_incentive_amount,
 				state: PaymentState::NeedsReview,
 				resolver_account: RESOLVER_ACCOUNT,
-				fee_detail: Some((FEE_RECIPIENT_ACCOUNT, 0)),
+				fee_amount: Zero::zero(),
 			},
 		);
 
@@ -613,7 +613,7 @@ fn test_request_refund() {
 					cancel_block: expected_cancel_block
 				},
 				resolver_account: RESOLVER_ACCOUNT,
-				fee_detail: Some((FEE_RECIPIENT_ACCOUNT, 0)),
+				fee_amount: Zero::zero(),
 			})
 		);
 
@@ -678,7 +678,7 @@ fn test_dispute_refund() {
 				incentive_amount: expected_incentive_amount,
 				state: PaymentState::NeedsReview,
 				resolver_account: RESOLVER_ACCOUNT,
-				fee_detail: Some((FEE_RECIPIENT_ACCOUNT, 0)),
+				fee_amount: Zero::zero(),
 			})
 		);
 
@@ -723,7 +723,7 @@ fn test_request_payment() {
 				incentive_amount: expected_incentive_amount,
 				state: PaymentState::PaymentRequested,
 				resolver_account: RESOLVER_ACCOUNT,
-				fee_detail: Some((FEE_RECIPIENT_ACCOUNT, 0)),
+				fee_amount: Zero::zero(),
 			})
 		);
 
@@ -799,7 +799,7 @@ fn test_accept_and_pay() {
 				incentive_amount: expected_incentive_amount,
 				state: PaymentState::PaymentRequested,
 				resolver_account: RESOLVER_ACCOUNT,
-				fee_detail: Some((FEE_RECIPIENT_ACCOUNT, 0)),
+				fee_amount: Zero::zero(),
 			})
 		);
 
@@ -870,7 +870,7 @@ fn test_accept_and_pay_should_charge_fee_correctly() {
 				incentive_amount: expected_incentive_amount,
 				state: PaymentState::PaymentRequested,
 				resolver_account: RESOLVER_ACCOUNT,
-				fee_detail: Some((FEE_RECIPIENT_ACCOUNT, expected_fee_amount)),
+				fee_amount: expected_fee_amount
 			})
 		);
 
@@ -947,7 +947,7 @@ fn test_create_payment_works() {
 				incentive_amount: expected_incentive_amount,
 				state: PaymentState::Created,
 				resolver_account: RESOLVER_ACCOUNT,
-				fee_detail: Some((FEE_RECIPIENT_ACCOUNT, expected_fee_amount)),
+				fee_amount: expected_fee_amount
 			})
 		);
 
@@ -975,7 +975,7 @@ fn test_create_payment_works() {
 				incentive_amount: expected_incentive_amount,
 				state: PaymentState::Created,
 				resolver_account: RESOLVER_ACCOUNT,
-				fee_detail: Some((FEE_RECIPIENT_ACCOUNT, expected_fee_amount)),
+				fee_amount: expected_fee_amount
 			})
 		);
 	});
@@ -1015,7 +1015,7 @@ fn test_reserve_payment_amount_works() {
 				incentive_amount: expected_incentive_amount,
 				state: PaymentState::Created,
 				resolver_account: RESOLVER_ACCOUNT,
-				fee_detail: Some((FEE_RECIPIENT_ACCOUNT, expected_fee_amount)),
+				fee_amount: expected_fee_amount
 			})
 		);
 
@@ -1065,7 +1065,7 @@ fn test_reserve_payment_amount_works() {
 				incentive_amount: expected_incentive_amount,
 				state: PaymentState::Created,
 				resolver_account: RESOLVER_ACCOUNT,
-				fee_detail: Some((FEE_RECIPIENT_ACCOUNT, expected_fee_amount)),
+				fee_amount: expected_fee_amount
 			})
 		);
 	});
@@ -1302,7 +1302,7 @@ fn test_automatic_refund_works() {
 					cancel_block: CANCEL_BLOCK
 				},
 				resolver_account: RESOLVER_ACCOUNT,
-				fee_detail: Some((FEE_RECIPIENT_ACCOUNT, 0)),
+				fee_amount: Zero::zero(),
 			})
 		);
 

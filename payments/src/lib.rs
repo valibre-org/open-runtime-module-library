@@ -76,7 +76,7 @@ pub mod pallet {
 		storage::bounded_btree_map::BoundedBTreeMap, traits::tokens::BalanceStatus, transactional,
 	};
 	use frame_system::pallet_prelude::*;
-	use orml_traits::{LockIdentifier, MultiCurrency, NamedMultiReservableCurrency};
+	use orml_traits::{arithmetic::Zero, LockIdentifier, MultiCurrency, NamedMultiReservableCurrency};
 	use sp_runtime::{
 		traits::{CheckedAdd, Saturating},
 		Percent,
@@ -578,14 +578,12 @@ pub mod pallet {
 						incentive_amount,
 						state: payment_state,
 						resolver_account: T::DisputeResolver::get_resolver_account(),
-						fee_detail: None,
+						fee_amount: Zero::zero(),
 					};
 
 					// Calculate fee amount - this will be implemented based on the custom
 					// implementation of the fee provider
-					let (fee_recipient, fee_percent) = T::FeeHandler::apply_fees(from, recipient, &new_payment, remark);
-					let fee_amount = fee_percent.mul_floor(amount);
-					new_payment.fee_detail = Some((fee_recipient, fee_amount));
+					new_payment.fee_amount = T::FeeHandler::get_fee_amount(from, recipient, &new_payment, remark);
 
 					*maybe_payment = Some(new_payment.clone());
 
@@ -602,9 +600,7 @@ pub mod pallet {
 		/// the recipient but will stay in Reserve state.
 		#[require_transactional]
 		fn reserve_payment_amount(from: &T::AccountId, to: &T::AccountId, payment: PaymentDetail<T>) -> DispatchResult {
-			let fee_amount = payment.fee_detail.map(|(_, f)| f).unwrap_or_else(|| 0u32.into());
-
-			let total_fee_amount = payment.incentive_amount.saturating_add(fee_amount);
+			let total_fee_amount = payment.incentive_amount.saturating_add(payment.fee_amount);
 			let total_amount = total_fee_amount.saturating_add(payment.amount);
 
 			// reserve the total amount from payment creator
@@ -632,29 +628,17 @@ pub mod pallet {
 			Payment::<T>::try_mutate(from, to, |maybe_payment| -> DispatchResult {
 				let payment = maybe_payment.take().ok_or(Error::<T>::InvalidPayment)?;
 
-				// unreserve the incentive amount and fees from the owner account
-				match payment.fee_detail {
-					Some((fee_recipient, fee_amount)) => {
-						T::Asset::unreserve_named(
-							&PALLET_RESERVE_ID,
-							payment.asset,
-							from,
-							payment.incentive_amount + fee_amount,
-						);
-						// transfer fee to marketplace if operation is not cancel
-						if recipient_share != Percent::zero() {
-							T::Asset::transfer(
-								payment.asset,
-								from,           // fee is paid by payment creator
-								&fee_recipient, // account of fee recipient
-								fee_amount,     // amount of fee
-							)?;
-						}
-					}
-					None => {
-						T::Asset::unreserve_named(&PALLET_RESERVE_ID, payment.asset, from, payment.incentive_amount);
-					}
-				};
+				T::Asset::unreserve_named(
+					&PALLET_RESERVE_ID,
+					payment.asset,
+					from,
+					payment.incentive_amount + payment.fee_amount,
+				);
+
+				// transfer fee to marketplace if operation is not cancel
+				if recipient_share != Percent::zero() {
+					T::FeeHandler::apply_fees(from, to, &payment)?;
+				}
 
 				// Unreserve the transfer amount
 				T::Asset::unreserve_named(&PALLET_RESERVE_ID, payment.asset, to, payment.amount);

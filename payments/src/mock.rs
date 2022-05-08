@@ -6,12 +6,12 @@ use frame_support::{
 	weights::DispatchClass,
 };
 use frame_system as system;
-use orml_traits::parameter_type_with_key;
+use orml_traits::{parameter_type_with_key, MultiCurrency};
 use sp_core::H256;
 use sp_runtime::{
 	testing::Header,
-	traits::{BlakeTwo256, IdentityLookup},
-	Percent,
+	traits::{BlakeTwo256, IdentityLookup, Zero},
+	DispatchResult, Percent,
 };
 
 type UncheckedExtrinsic = frame_system::mocking::MockUncheckedExtrinsic<Test>;
@@ -115,16 +115,26 @@ impl crate::types::DisputeResolver<AccountId> for MockDisputeResolver {
 
 pub struct MockFeeHandler;
 impl crate::types::FeeHandler<Test> for MockFeeHandler {
-	fn apply_fees(
+	fn get_fee_amount(
 		_from: &AccountId,
 		to: &AccountId,
-		_detail: &PaymentDetail<Test>,
+		detail: &PaymentDetail<Test>,
 		_remark: Option<&[u8]>,
-	) -> (AccountId, Percent) {
+	) -> Balance {
 		match to {
-			&PAYMENT_RECIPENT_FEE_CHARGED => (FEE_RECIPIENT_ACCOUNT, Percent::from_percent(MARKETPLACE_FEE_PERCENTAGE)),
-			_ => (FEE_RECIPIENT_ACCOUNT, Percent::from_percent(0)),
+			&PAYMENT_RECIPENT_FEE_CHARGED => Percent::from_percent(MARKETPLACE_FEE_PERCENTAGE) * detail.amount,
+			_ => Zero::zero(),
 		}
+	}
+
+	fn apply_fees(from: &AccountId, _to: &AccountId, detail: &PaymentDetail<Test>) -> DispatchResult {
+		// transfer the fee amount to fee recipient account
+		<Tokens as MultiCurrency<AccountId>>::transfer(
+			detail.asset,
+			from,                   // fee is paid by payment creator
+			&FEE_RECIPIENT_ACCOUNT, // account of fee recipient
+			detail.fee_amount,      // amount of fee
+		)
 	}
 }
 
