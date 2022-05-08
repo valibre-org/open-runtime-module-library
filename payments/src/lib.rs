@@ -589,6 +589,9 @@ pub mod pallet {
 
 					*maybe_payment = Some(new_payment.clone());
 
+					// increment provider to prevent sender data from getting reaped
+					let _ = frame_system::Pallet::<T>::inc_consumers(from);
+
 					Ok(new_payment)
 				},
 			)
@@ -660,6 +663,8 @@ pub mod pallet {
 				let amount_to_sender = payment.amount.saturating_sub(amount_to_recipient);
 				// send share to recipient
 				T::Asset::transfer(payment.asset, to, from, amount_to_sender)?;
+
+				let _ = frame_system::Pallet::<T>::dec_consumers(from);
 
 				Ok(())
 			})?;

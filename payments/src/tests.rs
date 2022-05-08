@@ -105,6 +105,8 @@ fn test_pay_works() {
 				fee_detail: Some((FEE_RECIPIENT_ACCOUNT, 0)),
 			})
 		);
+
+		assert_eq!(System::consumers(&PAYMENT_CREATOR), 1);
 	});
 }
 
@@ -175,6 +177,8 @@ fn test_cancel_works() {
 
 		// should be released from storage
 		assert_eq!(PaymentStore::<Test>::get(PAYMENT_CREATOR, PAYMENT_RECIPENT), None);
+
+		assert_eq!(System::consumers(&PAYMENT_CREATOR), 0);
 	});
 }
 
@@ -230,6 +234,7 @@ fn test_release_works() {
 
 		// should be deleted from storage
 		assert_eq!(PaymentStore::<Test>::get(PAYMENT_CREATOR, PAYMENT_RECIPENT), None);
+		assert_eq!(System::consumers(&PAYMENT_CREATOR), 0);
 
 		// should be able to create another payment since previous is released
 		assert_ok!(Payment::pay(
@@ -1411,5 +1416,30 @@ fn test_automatic_refund_works_for_multiple_payments() {
 
 		assert_eq!(Tokens::free_balance(CURRENCY_ID, &PAYMENT_CREATOR_TWO), 100);
 		assert_eq!(Tokens::free_balance(CURRENCY_ID, &PAYMENT_RECIPENT_TWO), 0);
+	});
+}
+
+#[test]
+fn test_reap_will_not_kill_sender_account() {
+	new_test_ext().execute_with(|| {
+		assert_eq!(System::providers(&PAYMENT_CREATOR), 1);
+		assert_eq!(System::consumers(&PAYMENT_CREATOR), 0);
+		assert!(System::account_exists(&PAYMENT_CREATOR));
+
+		assert_ok!(Payment::pay(
+			Origin::signed(PAYMENT_CREATOR),
+			PAYMENT_RECIPENT,
+			CURRENCY_ID,
+			20,
+			None
+		));
+
+		assert_eq!(System::providers(&PAYMENT_CREATOR), 1);
+		assert_eq!(System::consumers(&PAYMENT_CREATOR), 1);
+
+		// transfer the entire free balance
+		assert_eq!(Tokens::slash(CURRENCY_ID, &PAYMENT_CREATOR, 100,), 20);
+		assert_eq!(Tokens::total_balance(CURRENCY_ID, &PAYMENT_CREATOR), 0);
+		assert!(System::account_exists(&PAYMENT_CREATOR));
 	});
 }
