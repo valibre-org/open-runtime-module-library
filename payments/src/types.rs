@@ -92,13 +92,15 @@ pub trait DisputeResolver<Account> {
 	fn get_resolver_account() -> Account;
 }
 
-/// FeeRecipient details
+/// FeeRecipientShare details - specifies the share of fees each account
+/// receives
 #[derive(Encode, Decode, Debug, Clone, PartialEq, Eq, MaxEncodedLen, TypeInfo)]
 pub struct FeeRecipientShare<AccountId> {
 	pub account_id: AccountId,
 	pub percent_of_fees: Percent,
 }
 
+/// FeeRecipient details
 #[derive(Encode, Decode, Debug, Clone, PartialEq, Eq, MaxEncodedLen, TypeInfo)]
 pub struct FeeRecipient<AccountId, Balance> {
 	pub account_id: AccountId,

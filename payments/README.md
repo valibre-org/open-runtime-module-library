@@ -79,6 +79,37 @@ pub enum PaymentState<BlockNumber> {
 }
 ```
 
+The `FeeHandler` trait lets the implementation specify how much fees to charge for a payment and to which account it should be credited.
+The below example charges a 10% fee for every payment and distributes it evenly to two accounts.
+
+```rust
+pub struct MockFeeHandler;
+impl orml_payment::types::FeeHandler<T> for MockFeeHandler {
+	fn apply_fees(
+		_from: &AccountId,
+		_to: &AccountId,
+		_detail: &PaymentDetail<Test>,
+		_remark: Option<&[u8]>,
+	) -> FeeRecipientShareList<Test> {
+		pub const MARKETPLACE_FEE_PERCENTAGE: u8 = 10;
+		let mut fee_recipient_share_list: FeeRecipientShareList<Test> = Default::default();
+		fee_recipient_share_list
+			.try_push(FeeRecipientShare {
+					account_id: FEE_RECIPIENT_ACCOUNT,
+					percent_of_fees: Percent::from_percent(MARKETPLACE_FEE_PERCENTAGE / 2),
+			}).unwrap();
+
+		fee_recipient_share_list
+			.try_push(FeeRecipientShare {
+					account_id: SECOND_FEE_RECIPIENT_ACCOUNT,
+					percent_of_fees: Percent::from_percent(MARKETPLACE_FEE_PERCENTAGE / 2),
+			}).unwrap();
+
+		fee_recipient_share_list
+	}
+}
+```
+
 ## GenesisConfig
 
 The rates_provider pallet does not depend on the `GenesisConfig`
