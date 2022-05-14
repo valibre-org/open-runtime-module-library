@@ -1,5 +1,5 @@
 use crate as payment;
-use crate::PaymentDetail;
+use crate::*;
 use frame_support::{
 	parameter_types,
 	traits::{ConstU32, Contains, Everything, GenesisBuild, Hooks, OnFinalize},
@@ -27,6 +27,8 @@ pub const CURRENCY_ID: u32 = 1;
 pub const RESOLVER_ACCOUNT: AccountId = 12;
 pub const FEE_RECIPIENT_ACCOUNT: AccountId = 20;
 pub const PAYMENT_RECIPENT_FEE_CHARGED: AccountId = 21;
+pub const PAYMENT_RECIPENT_MULTIPLE_FEE_CHARGED: AccountId = 22;
+pub const SECOND_FEE_RECIPIENT_ACCOUNT: AccountId = 23;
 pub const INCENTIVE_PERCENTAGE: u8 = 10;
 pub const MARKETPLACE_FEE_PERCENTAGE: u8 = 10;
 pub const CANCEL_BLOCK_BUFFER: u64 = 600;
@@ -120,11 +122,41 @@ impl crate::types::FeeHandler<Test> for MockFeeHandler {
 		to: &AccountId,
 		_detail: &PaymentDetail<Test>,
 		_remark: Option<&[u8]>,
-	) -> (AccountId, Percent) {
+	) -> FeeRecipientShareList<Test> {
+		let mut fee_recipient_share_list: FeeRecipientShareList<Test> = Default::default();
 		match to {
-			&PAYMENT_RECIPENT_FEE_CHARGED => (FEE_RECIPIENT_ACCOUNT, Percent::from_percent(MARKETPLACE_FEE_PERCENTAGE)),
-			_ => (FEE_RECIPIENT_ACCOUNT, Percent::from_percent(0)),
-		}
+			// to test a single fee recipient
+			&PAYMENT_RECIPENT_FEE_CHARGED => fee_recipient_share_list
+				.try_push(FeeRecipientShare {
+					account_id: FEE_RECIPIENT_ACCOUNT,
+					percent_of_fees: Percent::from_percent(MARKETPLACE_FEE_PERCENTAGE),
+				})
+				.unwrap(),
+			// to test multiple fee recipients, both recipient receive 50% of fee
+			&PAYMENT_RECIPENT_MULTIPLE_FEE_CHARGED => {
+				fee_recipient_share_list
+					.try_push(FeeRecipientShare {
+						account_id: FEE_RECIPIENT_ACCOUNT,
+						percent_of_fees: Percent::from_percent(MARKETPLACE_FEE_PERCENTAGE / 2),
+					})
+					.unwrap();
+
+				fee_recipient_share_list
+					.try_push(FeeRecipientShare {
+						account_id: SECOND_FEE_RECIPIENT_ACCOUNT,
+						percent_of_fees: Percent::from_percent(MARKETPLACE_FEE_PERCENTAGE / 2),
+					})
+					.unwrap();
+			}
+			// to test no fee charged
+			_ => fee_recipient_share_list
+				.try_push(FeeRecipientShare {
+					account_id: FEE_RECIPIENT_ACCOUNT,
+					percent_of_fees: Percent::from_percent(0),
+				})
+				.unwrap(),
+		};
+		fee_recipient_share_list
 	}
 }
 
@@ -133,6 +165,7 @@ parameter_types! {
 	pub const MaxRemarkLength: u32 = 50;
 	pub const CancelBufferBlockLength: u64 = CANCEL_BLOCK_BUFFER;
 	pub const MaxScheduledTaskListLength : u32 = 5;
+	pub const FeeRecipientLimit : u32 = 3;
 }
 
 impl payment::Config for Test {
@@ -144,6 +177,7 @@ impl payment::Config for Test {
 	type MaxRemarkLength = MaxRemarkLength;
 	type CancelBufferBlockLength = CancelBufferBlockLength;
 	type MaxScheduledTaskListLength = MaxScheduledTaskListLength;
+	type FeeRecipientLimit = FeeRecipientLimit;
 	type WeightInfo = ();
 }
 

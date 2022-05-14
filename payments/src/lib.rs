@@ -68,7 +68,10 @@ pub mod weights;
 #[frame_support::pallet]
 pub mod pallet {
 	pub use crate::{
-		types::{DisputeResolver, FeeHandler, PaymentDetail, PaymentHandler, PaymentState, ScheduledTask, Task},
+		types::{
+			DisputeResolver, FeeHandler, FeeRecipient, FeeRecipientShare, PaymentDetail, PaymentHandler, PaymentState,
+			ScheduledTask, Task,
+		},
 		weights::WeightInfo,
 	};
 	use frame_support::{
@@ -76,7 +79,7 @@ pub mod pallet {
 		storage::bounded_btree_map::BoundedBTreeMap, traits::tokens::BalanceStatus, transactional,
 	};
 	use frame_system::pallet_prelude::*;
-	use orml_traits::{LockIdentifier, MultiCurrency, NamedMultiReservableCurrency};
+	use orml_traits::{arithmetic::Zero, LockIdentifier, MultiCurrency, NamedMultiReservableCurrency};
 	use sp_runtime::{
 		traits::{CheckedAdd, Saturating},
 		Percent,
@@ -99,6 +102,12 @@ pub mod pallet {
 		ScheduledTaskOf<T>,
 		<T as Config>::MaxRemarkLength,
 	>;
+	pub type FeeRecipientList<T> = BoundedVec<
+		FeeRecipient<<T as frame_system::Config>::AccountId, BalanceOf<T>>,
+		<T as Config>::FeeRecipientLimit,
+	>;
+	pub type FeeRecipientShareList<T> =
+		BoundedVec<FeeRecipientShare<<T as frame_system::Config>::AccountId>, <T as Config>::FeeRecipientLimit>;
 
 	#[pallet::config]
 	pub trait Config: frame_system::Config {
@@ -125,6 +134,9 @@ pub mod pallet {
 		/// canceled payment
 		#[pallet::constant]
 		type MaxScheduledTaskListLength: Get<u32>;
+		/// The maximum fee recipient accounts that be specified
+		#[pallet::constant]
+		type FeeRecipientLimit: Get<u32>;
 		//// Type representing the weight of this pallet
 		type WeightInfo: WeightInfo;
 	}
@@ -209,6 +221,8 @@ pub mod pallet {
 		DisputePeriodNotPassed,
 		/// The automatic cancelation queue cannot accept
 		RefundQueueFull,
+		/// Error in fee calculation
+		FeeCalculationFailed,
 	}
 
 	#[pallet::hooks]
@@ -583,10 +597,20 @@ pub mod pallet {
 
 					// Calculate fee amount - this will be implemented based on the custom
 					// implementation of the fee provider
-					let (fee_recipient, fee_percent) = T::FeeHandler::apply_fees(from, recipient, &new_payment, remark);
-					let fee_amount = fee_percent.mul_floor(amount);
-					new_payment.fee_detail = Some((fee_recipient, fee_amount));
+					let recipients = T::FeeHandler::apply_fees(from, recipient, &new_payment, remark);
 
+					let mut fee_recipient_list: FeeRecipientList<T> = Default::default();
+
+					for fee_recipient in recipients {
+						fee_recipient_list
+							.try_push(FeeRecipient {
+								account_id: fee_recipient.account_id,
+								fee_amount: fee_recipient.percent_of_fees.mul_floor(amount),
+							})
+							.map_err(|_| Error::<T>::FeeCalculationFailed)?;
+					}
+
+					new_payment.fee_detail = Some(fee_recipient_list);
 					*maybe_payment = Some(new_payment.clone());
 
 					// increment provider to prevent sender data from getting reaped
@@ -602,7 +626,18 @@ pub mod pallet {
 		/// the recipient but will stay in Reserve state.
 		#[require_transactional]
 		fn reserve_payment_amount(from: &T::AccountId, to: &T::AccountId, payment: PaymentDetail<T>) -> DispatchResult {
-			let fee_amount = payment.fee_detail.map(|(_, f)| f).unwrap_or_else(|| 0u32.into());
+			// calculate total fee amount
+			let fee_amount = match payment.fee_detail {
+				Some(recipient_list) => {
+					recipient_list
+						.iter()
+						.fold(Zero::zero(), |mut sum: BalanceOf<T>, fee_recipient| {
+							sum += fee_recipient.fee_amount;
+							sum
+						})
+				}
+				None => Zero::zero(),
+			};
 
 			let total_fee_amount = payment.incentive_amount.saturating_add(fee_amount);
 			let total_amount = total_fee_amount.saturating_add(payment.amount);
@@ -634,21 +669,33 @@ pub mod pallet {
 
 				// unreserve the incentive amount and fees from the owner account
 				match payment.fee_detail {
-					Some((fee_recipient, fee_amount)) => {
+					Some(recipient_list) => {
+						// calculate total fee amount
+						let fee_amount =
+							recipient_list
+								.iter()
+								.fold(Zero::zero(), |mut sum: BalanceOf<T>, fee_recipient| {
+									sum += fee_recipient.fee_amount;
+									sum
+								});
+
 						T::Asset::unreserve_named(
 							&PALLET_RESERVE_ID,
 							payment.asset,
 							from,
 							payment.incentive_amount + fee_amount,
 						);
+
 						// transfer fee to marketplace if operation is not cancel
 						if recipient_share != Percent::zero() {
-							T::Asset::transfer(
-								payment.asset,
-								from,           // fee is paid by payment creator
-								&fee_recipient, // account of fee recipient
-								fee_amount,     // amount of fee
-							)?;
+							for fee_recipient in recipient_list {
+								T::Asset::transfer(
+									payment.asset,
+									from,                      // fee is paid by payment creator
+									&fee_recipient.account_id, // account of fee recipient
+									fee_recipient.fee_amount,  // amount of fee
+								)?;
+							}
 						}
 					}
 					None => {

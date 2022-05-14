@@ -1,7 +1,7 @@
 use crate::{
 	mock::*,
 	types::{PaymentDetail, PaymentState},
-	Payment as PaymentStore, PaymentHandler, ScheduledTask, ScheduledTasks, Task, PALLET_RESERVE_ID,
+	FeeRecipient, Payment as PaymentStore, PaymentHandler, ScheduledTask, ScheduledTasks, Task, PALLET_RESERVE_ID,
 };
 use frame_support::{assert_noop, assert_ok, storage::with_transaction};
 use orml_traits::{MultiCurrency, MultiReservableCurrency, NamedMultiReservableCurrency};
@@ -54,7 +54,14 @@ fn test_pay_works() {
 				incentive_amount: expected_incentive_amount,
 				state: PaymentState::Created,
 				resolver_account: RESOLVER_ACCOUNT,
-				fee_detail: Some((FEE_RECIPIENT_ACCOUNT, 0)),
+				fee_detail: Some(
+					vec![FeeRecipient {
+						account_id: FEE_RECIPIENT_ACCOUNT,
+						fee_amount: 0_u32.into()
+					}]
+					.try_into()
+					.unwrap()
+				),
 			})
 		);
 		// the payment amount should be reserved correctly
@@ -102,7 +109,14 @@ fn test_pay_works() {
 				incentive_amount: 2,
 				state: PaymentState::Created,
 				resolver_account: RESOLVER_ACCOUNT,
-				fee_detail: Some((FEE_RECIPIENT_ACCOUNT, 0)),
+				fee_detail: Some(
+					vec![FeeRecipient {
+						account_id: FEE_RECIPIENT_ACCOUNT,
+						fee_amount: 0_u32.into()
+					}]
+					.try_into()
+					.unwrap()
+				),
 			})
 		);
 
@@ -134,7 +148,14 @@ fn test_cancel_works() {
 				incentive_amount: expected_incentive_amount,
 				state: PaymentState::Created,
 				resolver_account: RESOLVER_ACCOUNT,
-				fee_detail: Some((FEE_RECIPIENT_ACCOUNT, 0)),
+				fee_detail: Some(
+					vec![FeeRecipient {
+						account_id: FEE_RECIPIENT_ACCOUNT,
+						fee_amount: 0_u32.into()
+					}]
+					.try_into()
+					.unwrap()
+				),
 			})
 		);
 		// the payment amount should be reserved
@@ -205,7 +226,14 @@ fn test_release_works() {
 				incentive_amount: expected_incentive_amount,
 				state: PaymentState::Created,
 				resolver_account: RESOLVER_ACCOUNT,
-				fee_detail: Some((FEE_RECIPIENT_ACCOUNT, 0)),
+				fee_detail: Some(
+					vec![FeeRecipient {
+						account_id: FEE_RECIPIENT_ACCOUNT,
+						fee_amount: 0_u32.into()
+					}]
+					.try_into()
+					.unwrap()
+				),
 			})
 		);
 		// the payment amount should be reserved
@@ -367,7 +395,14 @@ fn test_charging_fee_payment_works() {
 				incentive_amount: expected_incentive_amount,
 				state: PaymentState::Created,
 				resolver_account: RESOLVER_ACCOUNT,
-				fee_detail: Some((FEE_RECIPIENT_ACCOUNT, expected_fee_amount)),
+				fee_detail: Some(
+					vec![FeeRecipient {
+						account_id: FEE_RECIPIENT_ACCOUNT,
+						fee_amount: expected_fee_amount
+					}]
+					.try_into()
+					.unwrap()
+				)
 			})
 		);
 		// the payment amount should be reserved
@@ -403,6 +438,82 @@ fn test_charging_fee_payment_works() {
 }
 
 #[test]
+fn test_charging_fee_payment_works_for_multiple_recipients() {
+	new_test_ext().execute_with(|| {
+		let creator_initial_balance = 100;
+		let payment_amount = 40;
+		let expected_incentive_amount = payment_amount / INCENTIVE_PERCENTAGE as u128;
+		let expected_fee_amount = payment_amount / MARKETPLACE_FEE_PERCENTAGE as u128;
+
+		// should be able to create a payment with available balance
+		assert_ok!(Payment::pay(
+			Origin::signed(PAYMENT_CREATOR),
+			PAYMENT_RECIPENT_MULTIPLE_FEE_CHARGED,
+			CURRENCY_ID,
+			payment_amount,
+			None
+		));
+		assert_eq!(
+			PaymentStore::<Test>::get(PAYMENT_CREATOR, PAYMENT_RECIPENT_MULTIPLE_FEE_CHARGED),
+			Some(PaymentDetail {
+				asset: CURRENCY_ID,
+				amount: payment_amount,
+				incentive_amount: expected_incentive_amount,
+				state: PaymentState::Created,
+				resolver_account: RESOLVER_ACCOUNT,
+				fee_detail: Some(
+					vec![
+						FeeRecipient {
+							account_id: FEE_RECIPIENT_ACCOUNT,
+							fee_amount: expected_fee_amount / 2
+						},
+						FeeRecipient {
+							account_id: SECOND_FEE_RECIPIENT_ACCOUNT,
+							fee_amount: expected_fee_amount / 2
+						}
+					]
+					.try_into()
+					.unwrap()
+				)
+			})
+		);
+		// the payment amount should be reserved
+		assert_eq!(
+			Tokens::free_balance(CURRENCY_ID, &PAYMENT_CREATOR),
+			creator_initial_balance - payment_amount - expected_fee_amount - expected_incentive_amount
+		);
+		assert_eq!(Tokens::free_balance(CURRENCY_ID, &PAYMENT_RECIPENT_FEE_CHARGED), 0);
+
+		// should succeed for valid payment
+		assert_ok!(Payment::release(
+			Origin::signed(PAYMENT_CREATOR),
+			PAYMENT_RECIPENT_MULTIPLE_FEE_CHARGED
+		));
+		// the payment amount should be transferred
+		assert_eq!(
+			Tokens::free_balance(CURRENCY_ID, &PAYMENT_CREATOR),
+			creator_initial_balance - payment_amount - expected_fee_amount
+		);
+		assert_eq!(
+			Tokens::total_balance(CURRENCY_ID, &PAYMENT_CREATOR),
+			creator_initial_balance - payment_amount - expected_fee_amount
+		);
+		assert_eq!(
+			Tokens::free_balance(CURRENCY_ID, &PAYMENT_RECIPENT_MULTIPLE_FEE_CHARGED),
+			payment_amount
+		);
+		assert_eq!(
+			Tokens::free_balance(CURRENCY_ID, &FEE_RECIPIENT_ACCOUNT),
+			expected_fee_amount / 2
+		);
+		assert_eq!(
+			Tokens::free_balance(CURRENCY_ID, &SECOND_FEE_RECIPIENT_ACCOUNT),
+			expected_fee_amount / 2
+		);
+	});
+}
+
+#[test]
 fn test_charging_fee_payment_works_when_canceled() {
 	new_test_ext().execute_with(|| {
 		let creator_initial_balance = 100;
@@ -426,7 +537,14 @@ fn test_charging_fee_payment_works_when_canceled() {
 				incentive_amount: expected_incentive_amount,
 				state: PaymentState::Created,
 				resolver_account: RESOLVER_ACCOUNT,
-				fee_detail: Some((FEE_RECIPIENT_ACCOUNT, expected_fee_amount)),
+				fee_detail: Some(
+					vec![FeeRecipient {
+						account_id: FEE_RECIPIENT_ACCOUNT,
+						fee_amount: expected_fee_amount
+					}]
+					.try_into()
+					.unwrap()
+				),
 			})
 		);
 		// the payment amount should be reserved
@@ -475,7 +593,14 @@ fn test_pay_with_remark_works() {
 				incentive_amount: expected_incentive_amount,
 				state: PaymentState::Created,
 				resolver_account: RESOLVER_ACCOUNT,
-				fee_detail: Some((FEE_RECIPIENT_ACCOUNT, 0)),
+				fee_detail: Some(
+					vec![FeeRecipient {
+						account_id: FEE_RECIPIENT_ACCOUNT,
+						fee_amount: 0_u32.into()
+					}]
+					.try_into()
+					.unwrap()
+				),
 			})
 		);
 		// the payment amount should be reserved correctly
@@ -553,7 +678,14 @@ fn test_do_not_overwrite_logic_works() {
 				incentive_amount: expected_incentive_amount,
 				state: PaymentState::NeedsReview,
 				resolver_account: RESOLVER_ACCOUNT,
-				fee_detail: Some((FEE_RECIPIENT_ACCOUNT, 0)),
+				fee_detail: Some(
+					vec![FeeRecipient {
+						account_id: FEE_RECIPIENT_ACCOUNT,
+						fee_amount: 0_u32.into(),
+					}]
+					.try_into()
+					.unwrap(),
+				),
 			},
 		);
 
@@ -613,7 +745,14 @@ fn test_request_refund() {
 					cancel_block: expected_cancel_block
 				},
 				resolver_account: RESOLVER_ACCOUNT,
-				fee_detail: Some((FEE_RECIPIENT_ACCOUNT, 0)),
+				fee_detail: Some(
+					vec![FeeRecipient {
+						account_id: FEE_RECIPIENT_ACCOUNT,
+						fee_amount: 0_u32.into()
+					}]
+					.try_into()
+					.unwrap()
+				),
 			})
 		);
 
@@ -678,7 +817,14 @@ fn test_dispute_refund() {
 				incentive_amount: expected_incentive_amount,
 				state: PaymentState::NeedsReview,
 				resolver_account: RESOLVER_ACCOUNT,
-				fee_detail: Some((FEE_RECIPIENT_ACCOUNT, 0)),
+				fee_detail: Some(
+					vec![FeeRecipient {
+						account_id: FEE_RECIPIENT_ACCOUNT,
+						fee_amount: 0_u32.into()
+					}]
+					.try_into()
+					.unwrap()
+				),
 			})
 		);
 
@@ -723,7 +869,14 @@ fn test_request_payment() {
 				incentive_amount: expected_incentive_amount,
 				state: PaymentState::PaymentRequested,
 				resolver_account: RESOLVER_ACCOUNT,
-				fee_detail: Some((FEE_RECIPIENT_ACCOUNT, 0)),
+				fee_detail: Some(
+					vec![FeeRecipient {
+						account_id: FEE_RECIPIENT_ACCOUNT,
+						fee_amount: 0_u32.into()
+					}]
+					.try_into()
+					.unwrap()
+				),
 			})
 		);
 
@@ -799,7 +952,14 @@ fn test_accept_and_pay() {
 				incentive_amount: expected_incentive_amount,
 				state: PaymentState::PaymentRequested,
 				resolver_account: RESOLVER_ACCOUNT,
-				fee_detail: Some((FEE_RECIPIENT_ACCOUNT, 0)),
+				fee_detail: Some(
+					vec![FeeRecipient {
+						account_id: FEE_RECIPIENT_ACCOUNT,
+						fee_amount: 0_u32.into()
+					}]
+					.try_into()
+					.unwrap()
+				),
 			})
 		);
 
@@ -870,7 +1030,14 @@ fn test_accept_and_pay_should_charge_fee_correctly() {
 				incentive_amount: expected_incentive_amount,
 				state: PaymentState::PaymentRequested,
 				resolver_account: RESOLVER_ACCOUNT,
-				fee_detail: Some((FEE_RECIPIENT_ACCOUNT, expected_fee_amount)),
+				fee_detail: Some(
+					vec![FeeRecipient {
+						account_id: FEE_RECIPIENT_ACCOUNT,
+						fee_amount: expected_fee_amount
+					}]
+					.try_into()
+					.unwrap()
+				),
 			})
 		);
 
@@ -947,7 +1114,14 @@ fn test_create_payment_works() {
 				incentive_amount: expected_incentive_amount,
 				state: PaymentState::Created,
 				resolver_account: RESOLVER_ACCOUNT,
-				fee_detail: Some((FEE_RECIPIENT_ACCOUNT, expected_fee_amount)),
+				fee_detail: Some(
+					vec![FeeRecipient {
+						account_id: FEE_RECIPIENT_ACCOUNT,
+						fee_amount: expected_fee_amount
+					}]
+					.try_into()
+					.unwrap()
+				),
 			})
 		);
 
@@ -975,7 +1149,14 @@ fn test_create_payment_works() {
 				incentive_amount: expected_incentive_amount,
 				state: PaymentState::Created,
 				resolver_account: RESOLVER_ACCOUNT,
-				fee_detail: Some((FEE_RECIPIENT_ACCOUNT, expected_fee_amount)),
+				fee_detail: Some(
+					vec![FeeRecipient {
+						account_id: FEE_RECIPIENT_ACCOUNT,
+						fee_amount: expected_fee_amount
+					}]
+					.try_into()
+					.unwrap()
+				),
 			})
 		);
 	});
@@ -1015,7 +1196,14 @@ fn test_reserve_payment_amount_works() {
 				incentive_amount: expected_incentive_amount,
 				state: PaymentState::Created,
 				resolver_account: RESOLVER_ACCOUNT,
-				fee_detail: Some((FEE_RECIPIENT_ACCOUNT, expected_fee_amount)),
+				fee_detail: Some(
+					vec![FeeRecipient {
+						account_id: FEE_RECIPIENT_ACCOUNT,
+						fee_amount: expected_fee_amount
+					}]
+					.try_into()
+					.unwrap()
+				),
 			})
 		);
 
@@ -1065,7 +1253,14 @@ fn test_reserve_payment_amount_works() {
 				incentive_amount: expected_incentive_amount,
 				state: PaymentState::Created,
 				resolver_account: RESOLVER_ACCOUNT,
-				fee_detail: Some((FEE_RECIPIENT_ACCOUNT, expected_fee_amount)),
+				fee_detail: Some(
+					vec![FeeRecipient {
+						account_id: FEE_RECIPIENT_ACCOUNT,
+						fee_amount: expected_fee_amount
+					}]
+					.try_into()
+					.unwrap()
+				),
 			})
 		);
 	});
@@ -1302,7 +1497,14 @@ fn test_automatic_refund_works() {
 					cancel_block: CANCEL_BLOCK
 				},
 				resolver_account: RESOLVER_ACCOUNT,
-				fee_detail: Some((FEE_RECIPIENT_ACCOUNT, 0)),
+				fee_detail: Some(
+					vec![FeeRecipient {
+						account_id: FEE_RECIPIENT_ACCOUNT,
+						fee_amount: 0_u32.into()
+					}]
+					.try_into()
+					.unwrap()
+				),
 			})
 		);
 

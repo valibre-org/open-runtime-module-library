@@ -51,17 +51,18 @@ pub struct PaymentDetail<T: pallet::Config> {
 	/// type of asset used for payment
 	pub asset: AssetIdOf<T>,
 	/// amount of asset used for payment
+	#[codec(compact)]
 	pub amount: BalanceOf<T>,
 	/// incentive amount that is credited to creator for resolving
+	#[codec(compact)]
 	pub incentive_amount: BalanceOf<T>,
-	/// enum to track payment lifecycle [Created, NeedsReview]
-	pub state: PaymentState<T::BlockNumber>,
+	/// enum to track payment lifecycle [Created, NeedsReview, RefundRequested,
+	/// Requested]
+	pub state: PaymentState<T>,
 	/// account that can settle any disputes created in the payment
 	pub resolver_account: T::AccountId,
 	/// fee charged and recipient account details
-	pub fee_detail: Option<(T::AccountId, BalanceOf<T>)>,
-	/// remarks to give context to payment
-	pub remark: Option<BoundedDataOf<T>>,
+	pub fee_detail: Option<FeeRecipientList<T>>,
 }
 ```
 

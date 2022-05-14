@@ -1,5 +1,5 @@
 #![allow(unused_qualifications)]
-use crate::{pallet, AssetIdOf, BalanceOf};
+use crate::{pallet, AssetIdOf, BalanceOf, FeeRecipientList, FeeRecipientShareList};
 use parity_scale_codec::{Decode, Encode, HasCompact, MaxEncodedLen};
 use scale_info::TypeInfo;
 use sp_runtime::{DispatchResult, Percent};
@@ -28,7 +28,7 @@ pub struct PaymentDetail<T: pallet::Config> {
 	/// account that can settle any disputes created in the payment
 	pub resolver_account: T::AccountId,
 	/// fee charged and recipient account details
-	pub fee_detail: Option<(T::AccountId, BalanceOf<T>)>,
+	pub fee_detail: Option<FeeRecipientList<T>>,
 }
 
 /// The `PaymentState` enum tracks the possible states that a payment can be in.
@@ -92,6 +92,19 @@ pub trait DisputeResolver<Account> {
 	fn get_resolver_account() -> Account;
 }
 
+/// FeeRecipient details
+#[derive(Encode, Decode, Debug, Clone, PartialEq, Eq, MaxEncodedLen, TypeInfo)]
+pub struct FeeRecipientShare<AccountId> {
+	pub account_id: AccountId,
+	pub percent_of_fees: Percent,
+}
+
+#[derive(Encode, Decode, Debug, Clone, PartialEq, Eq, MaxEncodedLen, TypeInfo)]
+pub struct FeeRecipient<AccountId, Balance> {
+	pub account_id: AccountId,
+	pub fee_amount: Balance,
+}
+
 /// Fee Handler trait that defines how to handle marketplace fees to every
 /// payment/swap
 pub trait FeeHandler<T: pallet::Config> {
@@ -101,7 +114,7 @@ pub trait FeeHandler<T: pallet::Config> {
 		to: &T::AccountId,
 		detail: &PaymentDetail<T>,
 		remark: Option<&[u8]>,
-	) -> (T::AccountId, Percent);
+	) -> FeeRecipientShareList<T>;
 }
 
 /// Types of Tasks that can be scheduled in the pallet
