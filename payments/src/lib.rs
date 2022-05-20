@@ -69,8 +69,8 @@ pub mod weights;
 pub mod pallet {
 	pub use crate::{
 		types::{
-			DisputeResolver, FeeHandler, FeeRecipient, FeeRecipientShare, PaymentDetail, PaymentHandler, PaymentState,
-			ScheduledTask, Task,
+			calculate_fee_amount, DisputeResolver, FeeHandler, FeeRecipient, FeeRecipientShare, PaymentDetail,
+			PaymentHandler, PaymentState, ScheduledTask, Task,
 		},
 		weights::WeightInfo,
 	};
@@ -221,8 +221,6 @@ pub mod pallet {
 		DisputePeriodNotPassed,
 		/// The automatic cancelation queue cannot accept
 		RefundQueueFull,
-		/// Error in fee calculation
-		FeeCalculationFailed,
 	}
 
 	#[pallet::hooks]
@@ -599,16 +597,16 @@ pub mod pallet {
 					// implementation of the fee provider
 					let recipients = T::FeeHandler::apply_fees(from, recipient, &new_payment, remark);
 
-					let mut fee_recipient_list: FeeRecipientList<T> = Default::default();
-
-					for fee_recipient in recipients {
-						fee_recipient_list
-							.try_push(FeeRecipient {
-								account_id: fee_recipient.account_id,
-								fee_amount: fee_recipient.percent_of_fees.mul_floor(amount),
-							})
-							.map_err(|_| Error::<T>::FeeCalculationFailed)?;
-					}
+					let fee_recipient_list: FeeRecipientList<T> = recipients
+						.iter()
+						.map(|fee_recipient| FeeRecipient {
+							account_id: fee_recipient.account_id.clone(),
+							fee_amount: fee_recipient.percent_of_fees.mul_floor(amount),
+						})
+						.collect::<Vec<_>>()
+						.try_into()
+						// this should not happen since max length of both vecs are FeeRecipientLimit
+						.expect("recipients should not exceed limit; qed");
 
 					new_payment.fee_detail = Some(fee_recipient_list);
 					*maybe_payment = Some(new_payment.clone());
@@ -628,14 +626,7 @@ pub mod pallet {
 		fn reserve_payment_amount(from: &T::AccountId, to: &T::AccountId, payment: PaymentDetail<T>) -> DispatchResult {
 			// calculate total fee amount
 			let fee_amount = match payment.fee_detail {
-				Some(recipient_list) => {
-					recipient_list
-						.iter()
-						.fold(Zero::zero(), |mut sum: BalanceOf<T>, fee_recipient| {
-							sum += fee_recipient.fee_amount;
-							sum
-						})
-				}
+				Some(recipient_list) => calculate_fee_amount::<T>(&recipient_list),
 				None => Zero::zero(),
 			};
 
@@ -671,13 +662,7 @@ pub mod pallet {
 				match payment.fee_detail {
 					Some(recipient_list) => {
 						// calculate total fee amount
-						let fee_amount =
-							recipient_list
-								.iter()
-								.fold(Zero::zero(), |mut sum: BalanceOf<T>, fee_recipient| {
-									sum += fee_recipient.fee_amount;
-									sum
-								});
+						let fee_amount = calculate_fee_amount::<T>(&recipient_list);
 
 						T::Asset::unreserve_named(
 							&PALLET_RESERVE_ID,

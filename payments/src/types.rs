@@ -2,7 +2,7 @@
 use crate::{pallet, AssetIdOf, BalanceOf, FeeRecipientList, FeeRecipientShareList};
 use parity_scale_codec::{Decode, Encode, HasCompact, MaxEncodedLen};
 use scale_info::TypeInfo;
-use sp_runtime::{DispatchResult, Percent};
+use sp_runtime::{traits::Zero, DispatchResult, Percent};
 
 /// The PaymentDetail struct stores information about the payment/escrow
 /// A "payment" in virto network is similar to an escrow, it is used to
@@ -133,4 +133,14 @@ pub struct ScheduledTask<Time: HasCompact> {
 	pub task: Task,
 	/// the 'time' at which the task should be executed
 	pub when: Time,
+}
+
+// helper function to calculate the total fee amount
+pub fn calculate_fee_amount<T: pallet::Config>(fee_recipient_list: &FeeRecipientList<T>) -> BalanceOf<T> {
+	fee_recipient_list
+		.iter()
+		.fold(Zero::zero(), |mut sum: BalanceOf<T>, fee_recipient| {
+			sum += fee_recipient.fee_amount;
+			sum
+		})
 }
