@@ -51,17 +51,18 @@ pub struct PaymentDetail<T: pallet::Config> {
 	/// type of asset used for payment
 	pub asset: AssetIdOf<T>,
 	/// amount of asset used for payment
+	#[codec(compact)]
 	pub amount: BalanceOf<T>,
 	/// incentive amount that is credited to creator for resolving
+	#[codec(compact)]
 	pub incentive_amount: BalanceOf<T>,
-	/// enum to track payment lifecycle [Created, NeedsReview]
-	pub state: PaymentState<T::BlockNumber>,
+	/// enum to track payment lifecycle [Created, NeedsReview, RefundRequested,
+	/// Requested]
+	pub state: PaymentState<T>,
 	/// account that can settle any disputes created in the payment
 	pub resolver_account: T::AccountId,
 	/// fee charged and recipient account details
-	pub fee_detail: Option<(T::AccountId, BalanceOf<T>)>,
-	/// remarks to give context to payment
-	pub remark: Option<BoundedDataOf<T>>,
+	pub fee_detail: Option<FeeRecipientList<T>>,
 }
 ```
 
@@ -75,6 +76,37 @@ pub enum PaymentState<BlockNumber> {
 	NeedsReview,
 	/// The user has requested refund and will be processed by `BlockNumber`
 	RefundRequested(BlockNumber),
+}
+```
+
+The `FeeHandler` trait lets the implementation specify how much fees to charge for a payment and to which account it should be credited.
+The below example charges a 10% fee for every payment and distributes it evenly to two accounts.
+
+```rust
+pub struct MockFeeHandler;
+impl orml_payment::types::FeeHandler<T> for MockFeeHandler {
+	fn apply_fees(
+		_from: &AccountId,
+		_to: &AccountId,
+		_detail: &PaymentDetail<Test>,
+		_remark: Option<&[u8]>,
+	) -> FeeRecipientShareList<Test> {
+		pub const MARKETPLACE_FEE_PERCENTAGE: u8 = 10;
+		let mut fee_recipient_share_list: FeeRecipientShareList<Test> = Default::default();
+		fee_recipient_share_list
+			.try_push(FeeRecipientShare {
+					account_id: FEE_RECIPIENT_ACCOUNT,
+					percent_of_fees: Percent::from_percent(MARKETPLACE_FEE_PERCENTAGE / 2),
+			}).unwrap();
+
+		fee_recipient_share_list
+			.try_push(FeeRecipientShare {
+					account_id: SECOND_FEE_RECIPIENT_ACCOUNT,
+					percent_of_fees: Percent::from_percent(MARKETPLACE_FEE_PERCENTAGE / 2),
+			}).unwrap();
+
+		fee_recipient_share_list
+	}
 }
 ```
 
